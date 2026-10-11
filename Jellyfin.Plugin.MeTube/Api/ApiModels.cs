@@ -70,12 +70,15 @@ public sealed class JobDto
     /// <summary>Gets or sets when it was added.</summary>
     public DateTimeOffset CreatedUtc { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the caller may delete this video.</summary>
+    public bool CanDelete { get; set; }
+
     /// <summary>
     /// Builds the DTO. <paramref name="itemGone"/> reports an InLibrary job whose item was
     /// deleted from Jellyfin since, as the extra state "Removed", so the client offers
     /// Add again instead of a Play button that leads nowhere.
     /// </summary>
-    public static JobDto From(JobRecord job, double? percent, bool includeUser, bool itemGone = false) => new()
+    public static JobDto From(JobRecord job, double? percent, bool includeUser, bool itemGone = false, bool canDelete = false) => new()
     {
         Id = job.Id,
         VideoId = job.VideoId,
@@ -87,7 +90,8 @@ public sealed class JobDto
         ItemId = itemGone ? null : job.ItemId,
         ThumbnailUrl = InnerTubeParser.ThumbnailUrl(job.VideoId),
         UserName = includeUser ? job.UserName : null,
-        CreatedUtc = job.CreatedUtc
+        CreatedUtc = job.CreatedUtc,
+        CanDelete = canDelete
     };
 }
 
@@ -112,8 +116,20 @@ public sealed class SearchItemDto
     /// <summary>Gets or sets the view count text.</summary>
     public string? ViewsText { get; set; }
 
+    /// <summary>Gets or sets the duration in seconds, for sorting.</summary>
+    public int? DurationSeconds { get; set; }
+
+    /// <summary>Gets or sets the exact view count, for sorting.</summary>
+    public long? ViewCount { get; set; }
+
+    /// <summary>Gets or sets the approximate age in seconds, for sorting.</summary>
+    public long? AgeSeconds { get; set; }
+
     /// <summary>Gets or sets the thumbnail URL.</summary>
     public string ThumbnailUrl { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets a value indicating whether the caller may delete this video from the library.</summary>
+    public bool CanDelete { get; set; }
 
     /// <summary>Gets or sets Addable, InLibrary, InProgress or NotAddable.</summary>
     public string Availability { get; set; } = "Addable";
@@ -149,6 +165,13 @@ public sealed class AddRequestDto
 
     /// <summary>Gets or sets a pasted YouTube link.</summary>
     public string? Url { get; set; }
+}
+
+/// <summary>Body of a Delete request.</summary>
+public sealed class DeleteRequestDto
+{
+    /// <summary>Gets or sets the video id.</summary>
+    public string? VideoId { get; set; }
 }
 
 /// <summary>Answer to an Add request.</summary>
@@ -198,6 +221,12 @@ public sealed class TestResultDto
     /// <summary>Gets or sets the library name and folder, or the problem.</summary>
     public string? LibraryDetail { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether Jellyfin can delete files in the library folder.</summary>
+    public bool WritableOk { get; set; }
+
+    /// <summary>Gets or sets the result of the write check.</summary>
+    public string? WritableDetail { get; set; }
+
     /// <summary>Gets or sets allowed users who cannot see the library or connect remotely.</summary>
     public List<string> AccessWarnings { get; set; } = new();
 
@@ -206,4 +235,70 @@ public sealed class TestResultDto
 
     /// <summary>Gets or sets the injection status text.</summary>
     public string? InjectionDetail { get; set; }
+}
+
+/// <summary>A channel folder, for the admin's Folders tab.</summary>
+public sealed class FolderDto
+{
+    /// <summary>Gets or sets the folder name.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets how many videos the folder holds.</summary>
+    public int VideoCount { get; set; }
+
+    /// <summary>Gets or sets the item id of one of its videos, for a thumbnail.</summary>
+    public Guid? SampleItemId { get; set; }
+}
+
+/// <summary>A merged channel folder: what MeTube puts in Source goes into Target.</summary>
+public sealed class FolderAliasDto
+{
+    /// <summary>Gets or sets the merged-away folder.</summary>
+    public string Source { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the folder that was kept.</summary>
+    public string Target { get; set; } = string.Empty;
+}
+
+/// <summary>Answer to the Folders request.</summary>
+public sealed class FoldersResponseDto
+{
+    /// <summary>Gets or sets the channel folders, by name.</summary>
+    public List<FolderDto> Folders { get; set; } = new();
+
+    /// <summary>Gets or sets the merges that redirect future downloads.</summary>
+    public List<FolderAliasDto> Aliases { get; set; } = new();
+}
+
+/// <summary>Body of a Merge request.</summary>
+public sealed class MergeRequestDto
+{
+    /// <summary>Gets or sets the folders to merge, including the one to keep.</summary>
+    public List<string>? Folders { get; set; }
+
+    /// <summary>Gets or sets the folder to keep.</summary>
+    public string? Target { get; set; }
+}
+
+/// <summary>Answer to a Merge request.</summary>
+public sealed class MergeResponseDto
+{
+    /// <summary>Gets or sets how many videos moved.</summary>
+    public int MovedVideos { get; set; }
+
+    /// <summary>Gets or sets how many files moved (videos plus thumbnails, subtitles...).</summary>
+    public int MovedFiles { get; set; }
+
+    /// <summary>Gets or sets the files left in place because of a name clash, relative to the library.</summary>
+    public List<string> Skipped { get; set; } = new();
+
+    /// <summary>Gets or sets the merged folders that were removed.</summary>
+    public List<string> RemovedFolders { get; set; } = new();
+}
+
+/// <summary>Body of a request to forget a merge.</summary>
+public sealed class AliasRemoveRequestDto
+{
+    /// <summary>Gets or sets the merged-away folder.</summary>
+    public string? Source { get; set; }
 }

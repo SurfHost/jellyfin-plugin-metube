@@ -53,6 +53,10 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<LibraryLocator>();
         serviceCollection.AddSingleton<LibraryIndex>();
         serviceCollection.AddSingleton<LibraryRefresher>();
+        serviceCollection.AddSingleton<VideoDeleter>();
+        serviceCollection.AddSingleton<LibraryMaintenance>();
+        serviceCollection.AddSingleton<FolderAliasStore>();
+        serviceCollection.AddSingleton<FolderMerger>();
         serviceCollection.AddSingleton<JobStore>();
         serviceCollection.AddSingleton<UserAccess>();
         serviceCollection.AddSingleton<DownloadWatcher>();

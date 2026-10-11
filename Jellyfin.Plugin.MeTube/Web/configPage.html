@@ -47,6 +47,10 @@
                             <div class="fieldDescription">Folder inside MeTube's download directory that is mounted as the Jellyfin library, e.g. <code>youtube</code>.</div>
                         </div>
                         <div class="inputContainer">
+                            <input is="emby-input" type="text" id="TempFolderName" label="MeTube temp folder" />
+                            <div class="fieldDescription">Name of MeTube's <code>TEMP_DIR</code> inside that folder, e.g. <code>.metube-tmp</code>. Empty folders left there are removed while MeTube is idle. Leave empty to switch this off.</div>
+                        </div>
+                        <div class="inputContainer">
                             <input is="emby-input" type="text" id="Presets" label="MeTube presets" />
                             <div class="fieldDescription">Comma-separated YTDL_OPTIONS_PRESETS names applied to every download, e.g. <code>jellyfin</code>.</div>
                         </div>
@@ -196,6 +200,7 @@
                 return ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
                     setValue('MeTubeUrl', cfg.MeTubeUrl);
                     setValue('Folder', cfg.Folder);
+                    setValue('TempFolderName', cfg.TempFolderName);
                     setValue('Presets', (cfg.Presets || []).join(', '));
                     setValue('Quality', cfg.Quality || 'best');
                     setValue('Format', cfg.Format || 'any');
@@ -223,6 +228,7 @@
                 ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
                     cfg.MeTubeUrl = value('MeTubeUrl').trim();
                     cfg.Folder = value('Folder').trim().replace(/^\/+|\/+$/g, '');
+                    cfg.TempFolderName = value('TempFolderName').trim().replace(/^.*[\/\\]/, '');
                     cfg.Presets = value('Presets').split(',').map(function (p) { return p.trim(); }).filter(function (p) { return p.length > 0; });
                     cfg.Quality = value('Quality');
                     cfg.Format = value('Format');
@@ -261,6 +267,9 @@
                     }
                     html += line(r.SearchOk, 'YouTube search', r.SearchDetail);
                     html += line(r.LibraryOk, 'Library', r.LibraryDetail);
+                    if (r.LibraryOk) {
+                        html += line(r.WritableOk, 'Delete', r.WritableDetail);
+                    }
                     html += line(r.InjectionOk, 'Menu entry', r.InjectionDetail);
                     (r.AccessWarnings || []).forEach(function (w) { html += line(false, 'Access', w); });
                     target.innerHTML = html;

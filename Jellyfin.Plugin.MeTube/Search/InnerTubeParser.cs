@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Jellyfin.Plugin.MeTube.Models;
 
 namespace Jellyfin.Plugin.MeTube.Search;
@@ -11,7 +12,7 @@ namespace Jellyfin.Plugin.MeTube.Search;
 /// Parses responses from YouTube's internal web API ("InnerTube"). Pure functions
 /// over a JSON document so they can be tested against captured responses.
 /// </summary>
-public static class InnerTubeParser
+public static partial class InnerTubeParser
 {
     /// <summary>Builds the 16:9 thumbnail URL for a video id.</summary>
     public static string ThumbnailUrl(string videoId) => "https://i.ytimg.com/vi/" + videoId + "/mqdefault.jpg";
@@ -75,6 +76,7 @@ public static class InnerTubeParser
             channelId = browseId.GetString();
         }
 
+        var publishedText = Text(renderer, "publishedTimeText");
         return new VideoResult
         {
             VideoId = videoId,
@@ -83,12 +85,89 @@ public static class InnerTubeParser
             ChannelId = channelId,
             DurationText = isLive ? null : durationText,
             DurationSeconds = isLive ? null : ParseDuration(durationText),
-            PublishedText = Text(renderer, "publishedTimeText"),
+            PublishedText = publishedText,
             ViewsText = Text(renderer, "shortViewCountText") ?? Text(renderer, "viewCountText"),
+            ViewCount = ParseViewCount(Text(renderer, "viewCountText")),
+            AgeSeconds = ParseAge(publishedText),
             IsLive = isLive,
             IsUpcoming = isUpcoming,
             ThumbnailUrl = ThumbnailUrl(videoId)
         };
+    }
+
+    /// <summary>
+    /// Reads the exact count from the long form ("442,807,905 views", "1.101.821
+    /// weergaven"): all digits, whatever the thousands separator. Abbreviated forms
+    /// ("442M views") are refused rather than guessed.
+    /// </summary>
+    public static long? ParseViewCount(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        if (text.Contains("No views", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        if (AbbreviatedRegex().IsMatch(text))
+        {
+            return null;
+        }
+
+        var digits = new StringBuilder();
+        foreach (var c in text)
+        {
+            if (char.IsAsciiDigit(c))
+            {
+                digits.Append(c);
+            }
+        }
+
+        return digits.Length is > 0 and <= 18 && long.TryParse(digits.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : null;
+    }
+
+    /// <summary>
+    /// Parses YouTube's relative dates in English ("3 days ago", "Streamed 1 year ago")
+    /// or Dutch ("16 jaar geleden", "3 dagen geleden") into an approximate age in
+    /// seconds. Other languages sort last.
+    /// </summary>
+    public static long? ParseAge(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var match = AgeRegex().Match(text);
+        if (!match.Success)
+        {
+            match = DutchAgeRegex().Match(text);
+            if (!match.Success)
+            {
+                return null;
+            }
+        }
+
+        if (!long.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var amount))
+        {
+            return null;
+        }
+
+        var name = match.Groups[2].Value.ToLowerInvariant();
+        long unit = name switch
+        {
+            _ when name.StartsWith("sec", StringComparison.Ordinal) => 1,
+            _ when name.StartsWith("min", StringComparison.Ordinal) => 60,
+            "hour" or "uur" => 3600,
+            _ when name.StartsWith("da", StringComparison.Ordinal) => 86400,
+            _ when name.StartsWith("we", StringComparison.Ordinal) => 7 * 86400,
+            _ when name.StartsWith("m", StringComparison.Ordinal) => 30 * 86400,
+            _ => 365 * 86400
+        };
+        return amount * unit;
     }
 
     /// <summary>
@@ -298,4 +377,16 @@ public static class InnerTubeParser
 
         return true;
     }
+
+    // "3 days ago", "Streamed 1 year ago", "Premiered 2 weeks ago".
+    [GeneratedRegex(@"(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AgeRegex();
+
+    // "3 dagen geleden", "1 uur geleden", "Gestreamd 16 jaar geleden".
+    [GeneratedRegex(@"(\d+)\s+(seconden?|minuut|minuten|uur|dag(?:en)?|we(?:ek|ken)|maand(?:en)?|jaar)\s+geleden", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DutchAgeRegex();
+
+    // "442M views", "1.2K views", "1,1 mln. weergaven": rounded, so not usable as a count.
+    [GeneratedRegex(@"\d\s*(?:[KMB]\b|mln|mld|bn\b|dzd)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AbbreviatedRegex();
 }

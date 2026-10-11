@@ -112,7 +112,8 @@ public static class JobTracker
         return VideoIdParser.TryExtract(entry.Url, out var fromUrl) && fromUrl == videoId;
     }
 
-    private static bool FolderMatches(string? entryFolder, string folder) =>
+    /// <summary>Returns true when a MeTube entry's folder is the given folder (ignoring slashes and case).</summary>
+    internal static bool FolderMatches(string? entryFolder, string folder) =>
         string.Equals(NormalizeFolder(entryFolder), NormalizeFolder(folder), StringComparison.OrdinalIgnoreCase);
 
     private static string NormalizeFolder(string? folder) => (folder ?? string.Empty).Trim().Trim('/', '\\');

@@ -17,12 +17,21 @@ Jellyfin server + this plugin ──LAN──► MeTube ──► <library>/yout
 
 ## Features
 
+- **A page inside Jellyfin.** YouTube opens at `#/youtube` under Jellyfin's own header and navigation, in the selected theme. Back, the
+  Android back button and reloads work, and the address keeps the search, so you can bookmark it.
 - **Search in Jellyfin.** Result cards show thumbnail, title, channel, length, views and age, with **Load more**. You can also paste any YouTube link.
+- **Sort and filter.** Sort by relevance, popularity, newest, shortest or longest. Filter by length (under 3 minutes, 3–20 minutes, over
+  20 minutes) and upload date (today, this week, this month, this year).
 - **One-click Add.** Each card tracks the download live: Add → Queued → Downloading 42% → Processing → **Play**.
 - **Instant library update.** When MeTube finishes, the plugin scans just the YouTube library, so the video appears within seconds.
+- **Delete.** Whoever added a video, and administrators, can delete it from the library and from disk. A confirmation comes first.
+- **Merge channel folders.** Administrators can merge folders such as "Artist" and "ArtistVEVO" into one. Later downloads from those
+  channels follow automatically.
+- **Tidy library.** Letterboxed 4:3 thumbnails are cropped to 16:9, so the library tile has no black bars, and the empty folders yt-dlp
+  leaves in MeTube's temp folder are removed.
 - **Who may add.** Administrators always can. You pick other users in the settings, and everyone else sees nothing.
 - **Limits** for non-admins: the longest allowed video and videos per 24 hours. Live streams and premieres are always refused.
-- **Downloads tab.** Users see their recent adds; admins see everyone's.
+- **Added videos tab.** Users see their recent adds; admins see everyone's.
 - **No YouTube API key.** Search uses YouTube's own web API. If YouTube changes its page layout, MeTube's yt-dlp search takes over.
 - **MeTube stays private.** Browsers only talk to Jellyfin, and Jellyfin's server talks to MeTube over your LAN.
 
@@ -31,6 +40,7 @@ Jellyfin server + this plugin ──LAN──► MeTube ──► <library>/yout
 - Jellyfin **12.2** or newer.
 - MeTube 2026.10 or newer, reachable from the Jellyfin server.
 - MeTube's download folder (or a subfolder of it) mounted as a Jellyfin library. See [SETUP.md](SETUP.md).
+- For Delete: Jellyfin needs write access to that folder.
 
 ## Install
 

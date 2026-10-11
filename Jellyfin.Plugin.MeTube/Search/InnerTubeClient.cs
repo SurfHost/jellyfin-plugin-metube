@@ -40,7 +40,6 @@ public sealed class InnerTubeClient
     public const string HttpClientName = "MeTube.YouTube";
 
     private const string BaseUrl = "https://www.youtube.com/youtubei/v1/";
-    private const string VideosOnlyFilter = "EgIQAfABAQ==";
     private const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
     private readonly IHttpClientFactory _httpClientFactory;
@@ -51,8 +50,12 @@ public sealed class InnerTubeClient
         _httpClientFactory = httpClientFactory;
     }
 
-    /// <summary>Runs a video search, or loads the next page when a continuation token is given.</summary>
-    public async Task<SearchPage> SearchAsync(string? query, string? continuation, InnerTubeSettings settings, CancellationToken cancellationToken)
+    /// <summary>
+    /// Runs a video search, or loads the next page when a continuation token is given.
+    /// The token carries the sort and filters of the first page, so they are only
+    /// sent with the first request.
+    /// </summary>
+    public async Task<SearchPage> SearchAsync(string? query, string? continuation, InnerTubeSettings settings, CancellationToken cancellationToken, SearchFilters? filters = null)
     {
         var body = new Dictionary<string, object> { ["context"] = Context(settings) };
         if (!string.IsNullOrEmpty(continuation))
@@ -62,7 +65,7 @@ public sealed class InnerTubeClient
         else
         {
             body["query"] = query ?? string.Empty;
-            body["params"] = VideosOnlyFilter;
+            body["params"] = (filters ?? SearchFilters.Default).ToParams();
         }
 
         using var document = await PostAsync("search", body, settings, cancellationToken).ConfigureAwait(false);

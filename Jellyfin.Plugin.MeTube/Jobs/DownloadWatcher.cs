@@ -18,19 +18,23 @@ namespace Jellyfin.Plugin.MeTube.Jobs;
 /// open it does no network traffic at all. When a download finishes it queues a
 /// scan of just the YouTube library, then waits for the item to appear. Once a
 /// minute it also looks again at recently closed jobs whose file may have
-/// arrived late.
+/// arrived late. Every ten minutes it tidies the library folder (see
+/// <see cref="MaintainAsync"/>).
 /// </summary>
 public sealed class DownloadWatcher : BackgroundService
 {
     private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ClosedCheckInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan MaintenanceInterval = TimeSpan.FromMinutes(10);
 
     private readonly JobStore _store;
     private readonly MeTubeClient _meTube;
     private readonly LibraryLocator _locator;
     private readonly LibraryIndex _libraryIndex;
     private readonly LibraryRefresher _refresher;
+    private readonly LibraryMaintenance _maintenance;
+    private readonly FolderMerger _merger;
     private readonly ILogger<DownloadWatcher> _logger;
     private readonly SemaphoreSlim _wake = new(0, 1);
     private readonly ConcurrentDictionary<Guid, byte> _submitting = new();
@@ -39,6 +43,7 @@ public sealed class DownloadWatcher : BackgroundService
     private readonly Dictionary<Guid, (int Count, DateTimeOffset First)> _misses = new();
     private readonly HashSet<Guid> _rescanned = new();
     private DateTimeOffset _lastClosedCheck = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastMaintenance = DateTimeOffset.MinValue;
 
     /// <summary>Initializes a new instance of the <see cref="DownloadWatcher"/> class.</summary>
     public DownloadWatcher(
@@ -47,6 +52,8 @@ public sealed class DownloadWatcher : BackgroundService
         LibraryLocator locator,
         LibraryIndex libraryIndex,
         LibraryRefresher refresher,
+        LibraryMaintenance maintenance,
+        FolderMerger merger,
         ILogger<DownloadWatcher> logger)
     {
         _store = store;
@@ -54,6 +61,8 @@ public sealed class DownloadWatcher : BackgroundService
         _locator = locator;
         _libraryIndex = libraryIndex;
         _refresher = refresher;
+        _maintenance = maintenance;
+        _merger = merger;
         _logger = logger;
     }
 
@@ -124,7 +133,7 @@ public sealed class DownloadWatcher : BackgroundService
         {
             if (job.State is JobState.Queued or JobState.Downloading)
             {
-                refresh |= await TrackActiveAsync(job, history, job.Folder ?? config.Folder, now, cancellationToken).ConfigureAwait(false);
+                refresh |= await TrackActiveAsync(job, history, job.Folder ?? config.Folder, location, now, cancellationToken).ConfigureAwait(false);
             }
             else if (job.State == JobState.Finished)
             {
@@ -137,6 +146,36 @@ public sealed class DownloadWatcher : BackgroundService
             _libraryIndex.Invalidate();
             _refresher.QueueRefresh(location.Id);
         }
+    }
+
+    /// <summary>
+    /// Tidies the library folder. While MeTube is idle: moves files that landed in a
+    /// merged-away channel folder into the folder it was merged into, and removes the
+    /// empty folders yt-dlp leaves in MeTube's temp folder. Always: crops letterboxed
+    /// thumbnails. Internal so tests and diagnostics can call it.
+    /// </summary>
+    internal async Task MaintainAsync(CancellationToken cancellationToken)
+    {
+        var location = _locator.Resolve();
+        if (location is null)
+        {
+            return;
+        }
+
+        if (await IsMeTubeIdleAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var moved = _merger.SweepAliases();
+            if (moved.Count > 0)
+            {
+                await _store.RelocateAsync(moved, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+                _libraryIndex.Invalidate();
+                _refresher.QueueRefresh(location.Id);
+            }
+
+            _maintenance.CleanTempFolders();
+        }
+
+        await _maintenance.SweepThumbnailsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -170,6 +209,23 @@ public sealed class DownloadWatcher : BackgroundService
                 _logger.LogWarning(ex, "MeTube: download watcher pass failed.");
             }
 
+            if (DateTimeOffset.UtcNow - _lastMaintenance >= MaintenanceInterval)
+            {
+                _lastMaintenance = DateTimeOffset.UtcNow;
+                try
+                {
+                    await MaintainAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "MeTube: library maintenance failed.");
+                }
+            }
+
             try
             {
                 await _wake.WaitAsync(PollInterval, stoppingToken).ConfigureAwait(false);
@@ -181,7 +237,7 @@ public sealed class DownloadWatcher : BackgroundService
         }
     }
 
-    private async Task<bool> TrackActiveAsync(JobRecord job, MeTubeHistory? history, string folder, DateTimeOffset now, CancellationToken cancellationToken)
+    private async Task<bool> TrackActiveAsync(JobRecord job, MeTubeHistory? history, string folder, LibraryLocation? location, DateTimeOffset now, CancellationToken cancellationToken)
     {
         if (JobTracker.IsPastDeadline(job, now))
         {
@@ -246,12 +302,13 @@ public sealed class DownloadWatcher : BackgroundService
                 return false;
 
             case JobState.Finished:
+                var filename = await SettleAsync(result.Filename, location, cancellationToken).ConfigureAwait(false);
                 await SetStateAsync(
                     job,
                     JobState.Finished,
                     j =>
                     {
-                        j.Filename = result.Filename;
+                        j.Filename = filename;
                         j.FinishedUtc = now;
                     },
                     now,
@@ -327,6 +384,49 @@ public sealed class DownloadWatcher : BackgroundService
                     now,
                     cancellationToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    /// <summary>
+    /// Puts a finished download in its final shape before Jellyfin scans it: into the
+    /// kept folder when its channel was merged, with the black bars cropped off its
+    /// thumbnail. Returns the (possibly new) file name relative to the library.
+    /// </summary>
+    private async Task<string?> SettleAsync(string? filename, LibraryLocation? location, CancellationToken cancellationToken)
+    {
+        try
+        {
+            filename = _merger.ApplyAlias(filename) ?? filename;
+            if (location is not null && PathMapper.TryMap(location.Path, filename, out var path))
+            {
+                await _maintenance.FixThumbnailAsync(path, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "MeTube: could not tidy up {File}.", filename);
+        }
+
+        return filename;
+    }
+
+    private async Task<bool> IsMeTubeIdleAsync(CancellationToken cancellationToken)
+    {
+        var url = Plugin.Config.MeTubeUrl;
+        if (string.IsNullOrWhiteSpace(url) || !_submitting.IsEmpty)
+        {
+            return false;
+        }
+
+        try
+        {
+            var history = await _meTube.GetHistoryAsync(url, cancellationToken).ConfigureAwait(false);
+            return history.Queue.Count == 0 && history.Pending.Count == 0;
+        }
+        catch (MeTubeException ex)
+        {
+            _logger.LogDebug(ex, "MeTube: could not ask MeTube whether it is busy; skipping the folder clean-up.");
+            return false;
         }
     }
 

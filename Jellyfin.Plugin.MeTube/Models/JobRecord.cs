@@ -25,7 +25,10 @@ public enum JobState
     Failed = 5,
 
     /// <summary>The request vanished from MeTube (history cleared or download cancelled).</summary>
-    Missing = 6
+    Missing = 6,
+
+    /// <summary>The video was deleted from the library through the plugin.</summary>
+    Deleted = 7
 }
 
 /// <summary>One "Add" request, tracked until the video is in the library.</summary>

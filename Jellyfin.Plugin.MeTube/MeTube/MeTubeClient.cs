@@ -127,6 +127,35 @@ public sealed class MeTubeClient
         }
     }
 
+    /// <summary>
+    /// Removes entries from MeTube's history. Files are never deleted this way: the
+    /// request carries no "delete_files", so MeTube's own trashcan setting decides, and
+    /// the plugin only calls this after it has deleted the files itself.
+    /// </summary>
+    public async Task RemoveHistoryAsync(string baseUrl, IReadOnlyCollection<string> urls, CancellationToken cancellationToken)
+    {
+        if (urls.Count == 0)
+        {
+            return;
+        }
+
+        var body = new Dictionary<string, object> { ["ids"] = urls, ["where"] = "done" };
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        try
+        {
+            using var response = await Client().PostAsync(BuildUri(baseUrl, "delete"), JsonContent.Create(body), timeout.Token).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new MeTubeException("MeTube /delete returned HTTP " + ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture) + ".");
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            throw new MeTubeException("Could not reach MeTube at " + baseUrl + ".", ex);
+        }
+    }
+
     /// <summary>Validates and normalizes the configured MeTube base URL.</summary>
     public static Uri BuildUri(string baseUrl, string path)
     {

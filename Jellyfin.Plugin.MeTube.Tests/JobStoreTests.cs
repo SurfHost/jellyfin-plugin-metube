@@ -147,7 +147,7 @@ public sealed class JobStoreTests : IDisposable
     {
         var jobs = new List<JobRecord>
         {
-            new() { Id = Guid.NewGuid(), State = JobState.InLibrary, UpdatedUtc = Now.AddDays(-31) },
+            new() { Id = Guid.NewGuid(), State = JobState.Missing, UpdatedUtc = Now.AddDays(-31) },
             new() { Id = Guid.NewGuid(), State = JobState.Queued, UpdatedUtc = Now.AddDays(-31) },
             new() { Id = Guid.NewGuid(), State = JobState.Failed, UpdatedUtc = Now.AddDays(-1) }
         };
@@ -155,13 +155,43 @@ public sealed class JobStoreTests : IDisposable
         JobStore.Prune(jobs, Now);
 
         Assert.Equal(2, jobs.Count);
-        Assert.DoesNotContain(jobs, j => j.State == JobState.InLibrary);
+        Assert.DoesNotContain(jobs, j => j.State == JobState.Missing);
 
         var many = Enumerable.Range(0, JobStore.MaxJobs + 20)
-            .Select(i => new JobRecord { Id = Guid.NewGuid(), State = JobState.InLibrary, UpdatedUtc = Now.AddMinutes(-i) })
+            .Select(i => new JobRecord { Id = Guid.NewGuid(), State = JobState.Failed, UpdatedUtc = Now.AddMinutes(-i) })
             .ToList();
         JobStore.Prune(many, Now);
         Assert.Equal(JobStore.MaxJobs, many.Count);
+    }
+
+    [Fact]
+    public void OwnershipRecordsNeitherAgeOutNorPushFreshFailuresOut()
+    {
+        var jobs = Enumerable.Range(0, JobStore.MaxJobs + 20)
+            .Select(i => new JobRecord { Id = Guid.NewGuid(), State = JobState.InLibrary, UpdatedUtc = Now.AddDays(-400) })
+            .ToList();
+        jobs.Add(new JobRecord { Id = Guid.NewGuid(), State = JobState.Downloaded, UpdatedUtc = Now.AddDays(-90) });
+        jobs.Add(new JobRecord { Id = Guid.NewGuid(), State = JobState.Failed, UpdatedUtc = Now });
+
+        JobStore.Prune(jobs, Now);
+
+        Assert.Equal(JobStore.MaxJobs + 22, jobs.Count);
+        Assert.Contains(jobs, j => j.State == JobState.Failed);
+        Assert.Contains(jobs, j => j.State == JobState.Downloaded);
+    }
+
+    [Fact]
+    public void TheHardCapKeepsOpenJobs()
+    {
+        var jobs = Enumerable.Range(0, JobStore.HardCap + 10)
+            .Select(i => new JobRecord { Id = Guid.NewGuid(), State = JobState.InLibrary, UpdatedUtc = Now.AddMinutes(-i) })
+            .ToList();
+        jobs.Add(new JobRecord { Id = Guid.NewGuid(), State = JobState.Queued, UpdatedUtc = Now.AddDays(-2) });
+
+        JobStore.Prune(jobs, Now);
+
+        Assert.Equal(JobStore.HardCap, jobs.Count);
+        Assert.Contains(jobs, j => j.State == JobState.Queued);
     }
 
     [Fact]

@@ -42,6 +42,10 @@ public sealed class MeTubeController : ControllerBase
     private readonly InnerTubeClient _innerTube;
     private readonly UserAccess _access;
     private readonly WebInjectionStatus _injection;
+    private readonly VideoDeleter _deleter;
+    private readonly FolderMerger _merger;
+    private readonly FolderAliasStore _aliases;
+    private readonly LibraryRefresher _refresher;
 
     /// <summary>Initializes a new instance of the <see cref="MeTubeController"/> class.</summary>
     public MeTubeController(
@@ -53,7 +57,11 @@ public sealed class MeTubeController : ControllerBase
         MeTubeClient meTube,
         InnerTubeClient innerTube,
         UserAccess access,
-        WebInjectionStatus injection)
+        WebInjectionStatus injection,
+        VideoDeleter deleter,
+        FolderMerger merger,
+        FolderAliasStore aliases,
+        LibraryRefresher refresher)
     {
         _search = search;
         _jobs = jobs;
@@ -64,6 +72,10 @@ public sealed class MeTubeController : ControllerBase
         _innerTube = innerTube;
         _access = access;
         _injection = injection;
+        _deleter = deleter;
+        _merger = merger;
+        _aliases = aliases;
+        _refresher = refresher;
     }
 
     /// <summary>Serves the client script that adds the YouTube menu entry.</summary>
@@ -108,7 +120,13 @@ public sealed class MeTubeController : ControllerBase
 
     /// <summary>Searches YouTube.</summary>
     [HttpGet("Search")]
-    public async Task<ActionResult<SearchResponseDto>> Search([FromQuery] string? q, [FromQuery] string? continuation, CancellationToken cancellationToken)
+    public async Task<ActionResult<SearchResponseDto>> Search(
+        [FromQuery] string? q,
+        [FromQuery] string? continuation,
+        [FromQuery] string? sort,
+        [FromQuery] string? duration,
+        [FromQuery] string? date,
+        CancellationToken cancellationToken)
     {
         NoStore();
         if (!TryGetCaller(out var userId, out var isAdmin, out var denied))
@@ -116,17 +134,20 @@ public sealed class MeTubeController : ControllerBase
             return denied;
         }
 
-        var outcome = await _search.SearchAsync(userId, q, continuation, cancellationToken).ConfigureAwait(false);
+        var filters = SearchFilters.Parse(sort, duration, date);
+        var outcome = await _search.SearchAsync(userId, q, continuation, filters, cancellationToken).ConfigureAwait(false);
         if (outcome.Page is null)
         {
             return StatusCode(outcome.StatusCode, new ErrorDto { Error = outcome.Error ?? "Search failed." });
         }
 
         var config = Plugin.Config;
-        var openJobs = (await _store.ListAsync(cancellationToken).ConfigureAwait(false))
+        var allJobs = await _store.ListAsync(cancellationToken).ConfigureAwait(false);
+        var openJobs = allJobs
             .Where(j => j.IsOpen)
             .GroupBy(j => j.VideoId, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var owners = OwnersByVideo(allJobs);
 
         var response = new SearchResponseDto { Continuation = outcome.Page.Continuation, Source = outcome.Source };
         foreach (var video in outcome.Page.Items)
@@ -139,6 +160,9 @@ public sealed class MeTubeController : ControllerBase
                 DurationText = video.DurationText,
                 PublishedText = video.PublishedText,
                 ViewsText = video.ViewsText,
+                DurationSeconds = video.DurationSeconds,
+                ViewCount = video.ViewCount,
+                AgeSeconds = video.AgeSeconds,
                 ThumbnailUrl = video.ThumbnailUrl
             };
 
@@ -146,12 +170,13 @@ public sealed class MeTubeController : ControllerBase
             {
                 item.Availability = "InLibrary";
                 item.ItemId = _libraryIndex.ResolveItemId(video.VideoId, file);
+                item.CanDelete = isAdmin || (owners.TryGetValue(video.VideoId, out var owner) && owner == userId);
                 _jobs.RefreshIfOrphan(item.ItemId);
             }
             else if (openJobs.TryGetValue(video.VideoId, out var job))
             {
                 item.Availability = "InProgress";
-                item.Job = ToDto(job, isAdmin);
+                item.Job = ToDto(job, isAdmin, userId, owners);
             }
             else if (video.IsUpcoming)
             {
@@ -197,11 +222,12 @@ public sealed class MeTubeController : ControllerBase
             return StatusCode(outcome.StatusCode, new ErrorDto { Error = outcome.Error });
         }
 
+        var owners = outcome.Job is null ? null : OwnersByVideo(await _store.ListAsync(cancellationToken).ConfigureAwait(false));
         return new AddResponseDto
         {
             AlreadyInLibrary = outcome.AlreadyInLibrary,
             ItemId = outcome.LibraryItemId,
-            Job = outcome.Job is null ? null : ToDto(outcome.Job, isAdmin)
+            Job = outcome.Job is null ? null : ToDto(outcome.Job, isAdmin, userId, owners)
         };
     }
 
@@ -221,6 +247,7 @@ public sealed class MeTubeController : ControllerBase
         }
 
         var jobs = await _store.ListAsync(cancellationToken).ConfigureAwait(false);
+        var owners = OwnersByVideo(jobs);
         if (!string.IsNullOrWhiteSpace(videoIds))
         {
             var wanted = videoIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -230,15 +257,152 @@ public sealed class MeTubeController : ControllerBase
             return jobs
                 .Where(j => wanted.Contains(j.VideoId))
                 .GroupBy(j => j.VideoId, StringComparer.Ordinal)
-                .Select(g => ToDto(g.First(), isAdmin))
+                .Select(g => ToDto(g.First(), isAdmin, userId, owners))
                 .ToList();
         }
 
         return jobs
             .Where(j => isAdmin || j.UserId == userId || (j.RequestedBy?.Contains(userId) ?? false))
             .Take(StatusJobLimit)
-            .Select(j => ToDto(j, isAdmin))
+            .Select(j => ToDto(j, isAdmin, userId, owners))
             .ToList();
+    }
+
+    /// <summary>
+    /// Deletes a video from the library: its files, its Jellyfin item and, when empty,
+    /// its channel folder. Allowed for the user who added it and for administrators,
+    /// independent of Jellyfin's own "allow media deletion" setting, which would let a
+    /// user delete everything in the library rather than just their own videos.
+    /// </summary>
+    [HttpPost("Delete")]
+    public async Task<ActionResult> Delete([FromBody] DeleteRequestDto request, CancellationToken cancellationToken)
+    {
+        NoStore();
+        if (!TryGetCaller(out var userId, out var isAdmin, out var denied))
+        {
+            return denied;
+        }
+
+        var videoId = request?.VideoId;
+        if (!VideoIdParser.IsValidId(videoId))
+        {
+            return BadRequest(new ErrorDto { Error = "That is not a YouTube video id." });
+        }
+
+        var ownerJob = await _store.FindOwnerJobAsync(videoId, cancellationToken).ConfigureAwait(false);
+        if (!isAdmin && ownerJob?.UserId != userId)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorDto { Error = "Only the person who added this video, or an administrator, can delete it." });
+        }
+
+        var library = _locator.Resolve();
+        var result = _deleter.Delete(videoId, ownerJob?.Filename);
+        switch (result.Outcome)
+        {
+            case DeleteOutcome.NotWritable:
+            case DeleteOutcome.Refused:
+                return StatusCode(StatusCodes.Status409Conflict, new ErrorDto { Error = result.Message ?? "Could not delete the video." });
+            case DeleteOutcome.Unavailable:
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new ErrorDto { Error = result.Message ?? "The YouTube library is not available right now." });
+            case DeleteOutcome.NotFound:
+                // Already gone (deleted in Jellyfin or on disk): just tidy up the jobs.
+                await _store.MarkDeletedAsync(videoId, DateTimeOffset.UtcNow, CancellationToken.None).ConfigureAwait(false);
+                return StatusCode(StatusCodes.Status404NotFound, new ErrorDto { Error = result.Message ?? "This video is no longer in the library." });
+        }
+
+        // Another copy of the same video (say, from a playlist download) may remain:
+        // then only the owner's own job closes, and the remaining copy keeps its owner.
+        if (_libraryIndex.TryFindFile(videoId, out _) && ownerJob is not null)
+        {
+            await _store.UpdateAsync(
+                ownerJob.Id,
+                j =>
+                {
+                    j.State = JobState.Deleted;
+                    j.ItemId = null;
+                },
+                DateTimeOffset.UtcNow,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        else
+        {
+            await _store.MarkDeletedAsync(videoId, DateTimeOffset.UtcNow, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        await ForgetInMeTubeAsync(videoId, result.DeletedPath, library).ConfigureAwait(false);
+        return NoContent();
+    }
+
+    /// <summary>Lists the library's channel folders and the merges in force (administrators).</summary>
+    [HttpGet("Admin/Folders")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<FoldersResponseDto> Folders()
+    {
+        NoStore();
+        return new FoldersResponseDto
+        {
+            Folders = _merger.ListFolders()
+                .Select(f => new FolderDto { Name = f.Name, VideoCount = f.VideoCount, SampleItemId = f.SampleItemId })
+                .ToList(),
+            Aliases = _aliases.GetAll()
+                .OrderBy(a => a.Key, StringComparer.CurrentCultureIgnoreCase)
+                .Select(a => new FolderAliasDto { Source = a.Key, Target = _aliases.Resolve(a.Key) ?? a.Value })
+                .ToList()
+        };
+    }
+
+    /// <summary>
+    /// Merges channel folders into the one to keep (administrators). Later downloads from
+    /// the merged channels go into the kept folder too.
+    /// </summary>
+    [HttpPost("Admin/Merge")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<MergeResponseDto>> Merge([FromBody] MergeRequestDto request)
+    {
+        NoStore();
+        var folders = request?.Folders ?? new List<string>();
+        var target = request?.Target;
+        if (string.IsNullOrWhiteSpace(target) || folders.Count < 2 || folders.Count > 500 || !folders.Contains(target, StringComparer.Ordinal))
+        {
+            return BadRequest(new ErrorDto { Error = "Choose at least two folders, and which one to keep." });
+        }
+
+        var result = _merger.Merge(folders, target);
+        if (result.Error is not null)
+        {
+            return BadRequest(new ErrorDto { Error = result.Error });
+        }
+
+        // The files have moved; the bookkeeping must follow even if the browser gives up.
+        await _store.RelocateAsync(result.Moved, DateTimeOffset.UtcNow, CancellationToken.None).ConfigureAwait(false);
+        var library = _locator.Resolve();
+        if (library is not null && (result.MovedFiles > 0 || result.RemovedFolders.Count > 0))
+        {
+            _refresher.QueueRefresh(library.Id);
+        }
+
+        return new MergeResponseDto
+        {
+            MovedVideos = result.Moved.Count,
+            MovedFiles = result.MovedFiles,
+            Skipped = result.Skipped,
+            RemovedFolders = result.RemovedFolders
+        };
+    }
+
+    /// <summary>Forgets a merge, so MeTube's downloads stay in that channel's own folder again (administrators).</summary>
+    [HttpPost("Admin/Aliases/Remove")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult RemoveAlias([FromBody] AliasRemoveRequestDto request)
+    {
+        NoStore();
+        var source = request?.Source;
+        if (!FolderNames.IsSafeName(source))
+        {
+            return BadRequest(new ErrorDto { Error = "That is not a folder name." });
+        }
+
+        return _aliases.Remove(source!) ? NoContent() : NotFound(new ErrorDto { Error = "That folder was not merged." });
     }
 
     /// <summary>Checks MeTube, YouTube, the library and user access, for the settings page.</summary>
@@ -283,6 +447,7 @@ public sealed class MeTubeController : ControllerBase
         else
         {
             result.LibraryOk = Directory.Exists(library.Path);
+            (result.WritableOk, result.WritableDetail) = _deleter.ProbeWritable();
             result.LibraryDetail = library.Name + " (" + library.Path + ")" + (result.LibraryOk ? string.Empty : " — folder not found inside Jellyfin.");
             foreach (var allowedId in config.AllowedUserIds ?? Array.Empty<Guid>())
             {
@@ -320,10 +485,54 @@ public sealed class MeTubeController : ControllerBase
         return result;
     }
 
-    private JobDto ToDto(JobRecord job, bool isAdmin)
+    private static Dictionary<string, Guid> OwnersByVideo(IReadOnlyList<JobRecord> jobs) => jobs
+        .Where(j => j.State is JobState.InLibrary or JobState.Downloaded or JobState.Finished)
+        .GroupBy(j => j.VideoId, StringComparer.Ordinal)
+        .ToDictionary(g => g.Key, g => g.OrderByDescending(j => j.CreatedUtc).First().UserId, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Builds the client's view of a job. Delete is offered by the same rule the Delete
+    /// endpoint enforces: administrators, or the adder of the video's newest delivered job.
+    /// </summary>
+    private JobDto ToDto(JobRecord job, bool isAdmin, Guid callerId, IReadOnlyDictionary<string, Guid>? owners)
     {
         var itemGone = job.State == JobState.InLibrary && job.ItemId is { } itemId && !_libraryIndex.ItemExists(itemId);
-        return JobDto.From(job, _store.GetProgress(job.Id), isAdmin, itemGone);
+        var canDelete = job.State is JobState.InLibrary or JobState.Downloaded
+            && (isAdmin || (owners is not null && owners.TryGetValue(job.VideoId, out var owner) && owner == callerId));
+        return JobDto.From(job, _store.GetProgress(job.Id), isAdmin, itemGone, canDelete);
+    }
+
+    /// <summary>
+    /// Removes MeTube's history entry for the deleted file, so MeTube's own page does not
+    /// list a file that no longer exists. Only an entry for this video with the deleted
+    /// file's name is removed. The folder is not compared: a merge may have moved the
+    /// file out of the channel folder MeTube put it in.
+    /// </summary>
+    private async Task ForgetInMeTubeAsync(string videoId, string? deletedPath, LibraryLocation? library)
+    {
+        var baseUrl = Plugin.Config.MeTubeUrl;
+        if (string.IsNullOrWhiteSpace(baseUrl) || deletedPath is null || library is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var history = await _meTube.GetHistoryAsync(baseUrl, CancellationToken.None).ConfigureAwait(false);
+            var urls = history.Done
+                .Where(e => e.Url is not null
+                    && JobTracker.FolderMatches(e.Folder, Plugin.Config.Folder)
+                    && (string.Equals(e.Id, videoId, StringComparison.Ordinal) || (VideoIdParser.TryExtract(e.Url, out var id) && id == videoId))
+                    && PathMapper.TryMap(library.Path, e.Filename, out var mapped)
+                    && string.Equals(Path.GetFileName(mapped), Path.GetFileName(deletedPath), StringComparison.Ordinal))
+                .Select(e => e.Url!)
+                .ToList();
+            await _meTube.RemoveHistoryAsync(baseUrl, urls, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (MeTubeException)
+        {
+            // Cosmetic only; the file is already gone.
+        }
     }
 
     private bool TryGetCaller(out Guid userId, out bool isAdmin, out ActionResult denied)

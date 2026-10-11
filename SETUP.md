@@ -104,6 +104,13 @@ Dashboard → Libraries → Add Media Library:
 Users who may add videos also need access to this library (Dashboard → Users → user → Access). They need
 "Allow remote connections to this server" if they use Jellyfin from outside your network.
 
+For **Delete**, the Jellyfin server itself must be able to write to the folder. On TrueNAS, open Apps → jellyfin → Edit → Storage and make
+sure the storage that holds the YouTube folder is not marked **Read Only**. You don't need Jellyfin's own "Allow media deletion"
+user setting: the plugin only lets people delete the videos they added (admins can delete any).
+
+Leave MeTube's `DELETE_FILE_ON_TRASHCAN` unset (false). With it set to `true`, together with `CLEAR_COMPLETED_AFTER`, MeTube deletes downloaded
+files on its own when it clears its history.
+
 ## 5. Plugin
 
 Dashboard → Plugins → Repositories → **+**:
@@ -122,10 +129,12 @@ Then Catalog → **MeTube** → Install, and restart Jellyfin. Open the plugin s
 
 | Symptom | Cause / fix |
 |---|---|
-| No YouTube entry in the menu | Hard-refresh the page, or clear the app cache in the Android app. Check that you are an allowed user, and that "Inject the menu entry" is on in the plugin settings. |
+| No YouTube entry in the menu | Hard-refresh the page, or clear the app cache in the Android app. Check that you are an allowed user, and that "Inject the menu entry" is on in the plugin settings. You can always open `…/web/#/youtube` directly. |
+| Delete says Jellyfin is not allowed to delete files | Jellyfin's storage for the YouTube folder is read-only, or Jellyfin runs as a user without write access to MeTube's folders. Test connection shows the same check. |
 | Download shows **Failed** | The MeTube error is shown on the card. Open MeTube's web page on the LAN for details. |
 | Download shows **Missing** | MeTube's history was cleared before the plugin saw the result, or the file landed somewhere Jellyfin can't see. Check `youtube/<channel>/` on the share. |
 | Video downloaded but not in Jellyfin | Channel folders named `metadata`, `subs`, `sample`, or starting with `.`, are ignored by Jellyfin. Rename the folder and scan the library. |
-| Leftover files in `youtube/.metube-tmp` | They come from failed or cancelled downloads. Delete them when MeTube's queue is empty. |
-| The menu entry breaks after a Jellyfin update | Untick "Inject the menu entry". Admins can still use **Open YouTube search** on the plugin settings page. |
+| Leftover files in `youtube/.metube-tmp` | The plugin removes the empty folders there while MeTube is idle (every 10 minutes), but never files. Leftover files come from failed or cancelled downloads; delete them when MeTube's queue is empty. If your `TEMP_DIR` has another name, set it in the plugin settings. |
+| Black bars on the YouTube library tile | The plugin crops letterboxed thumbnails within 10 minutes of a restart and rebuilds the tile. Refresh the page to see it. |
+| The menu entry or the page breaks after a Jellyfin update | Untick "Inject the menu entry". Admins can still use **Open YouTube search** on the plugin settings page. |
 | Can't watch while the internet is down | Your Jellyfin apps connect through the public hostname. Add the LAN address (`http://<nas-ip>:<port>`) as a server in each app. |

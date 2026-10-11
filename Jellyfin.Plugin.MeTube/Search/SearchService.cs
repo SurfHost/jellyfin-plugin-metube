@@ -68,7 +68,7 @@ public sealed partial class SearchService
         !string.IsNullOrEmpty(token) && token.Length <= 4096 && ContinuationRegex().IsMatch(token);
 
     /// <summary>Runs a search for a user.</summary>
-    public async Task<SearchOutcome> SearchAsync(Guid userId, string? rawQuery, string? continuation, CancellationToken cancellationToken)
+    public async Task<SearchOutcome> SearchAsync(Guid userId, string? rawQuery, string? continuation, SearchFilters filters, CancellationToken cancellationToken)
     {
         var query = NormalizeQuery(rawQuery);
         if (!string.IsNullOrEmpty(continuation))
@@ -89,7 +89,7 @@ public sealed partial class SearchService
 
         var now = DateTimeOffset.UtcNow;
         var settings = VideoInfoService.CurrentSettings();
-        var key = string.Join('|', settings.Region, settings.Language, continuation ?? string.Empty, (query ?? string.Empty).ToLowerInvariant());
+        var key = string.Join('|', settings.Region, settings.Language, filters.CacheKey, continuation ?? string.Empty, (query ?? string.Empty).ToLowerInvariant());
         if (_cache.TryGetValue(key, out var hit) && now - hit.At < CacheFor)
         {
             return new SearchOutcome(200, hit.Page, hit.Source, null);
@@ -117,7 +117,7 @@ public sealed partial class SearchService
             var parseFailed = false;
             try
             {
-                page = await _innerTube.SearchAsync(query, continuation, settings, cancellationToken).ConfigureAwait(false);
+                page = await _innerTube.SearchAsync(query, continuation, settings, cancellationToken, filters).ConfigureAwait(false);
                 parseFailed = page.Items.Count == 0 && string.IsNullOrEmpty(continuation);
             }
             catch (JsonException ex)
@@ -127,7 +127,9 @@ public sealed partial class SearchService
                 parseFailed = string.IsNullOrEmpty(continuation);
             }
 
-            if (parseFailed && query is not null && !string.IsNullOrWhiteSpace(Plugin.Config.MeTubeUrl))
+            // MeTube's yt-dlp search knows nothing about sort or filters, and an empty
+            // filtered search (say, today + over 20 minutes) is usually genuinely empty.
+            if (parseFailed && filters.IsDefault && query is not null && !string.IsNullOrWhiteSpace(Plugin.Config.MeTubeUrl))
             {
                 try
                 {

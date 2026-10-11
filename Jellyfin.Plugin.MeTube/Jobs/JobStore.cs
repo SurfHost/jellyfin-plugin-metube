@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.MeTube.Library;
 using Jellyfin.Plugin.MeTube.Models;
 using MediaBrowser.Common.Configuration;
 using Microsoft.Extensions.Logging;
@@ -37,8 +38,15 @@ public sealed class JobStore
     /// <summary>Closed jobs older than this are pruned.</summary>
     public static readonly TimeSpan KeepClosedFor = TimeSpan.FromDays(30);
 
-    /// <summary>The most jobs kept on disk.</summary>
+    /// <summary>The most closed jobs (failed, missing, deleted...) kept on disk.</summary>
     public const int MaxJobs = 500;
+
+    /// <summary>
+    /// The most jobs kept on disk in total. Ownership records are normally kept for as
+    /// long as their video is in the library; this only bounds a store that somehow
+    /// keeps growing.
+    /// </summary>
+    public const int HardCap = 5000;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -235,18 +243,131 @@ public sealed class JobStore
     /// <summary>Reads in-memory download progress.</summary>
     public double? GetProgress(Guid id) => _progress.TryGetValue(id, out var percent) ? percent : null;
 
-    /// <summary>Drops closed jobs older than 30 days and keeps at most <see cref="MaxJobs"/>.</summary>
-    internal static void Prune(List<JobRecord> jobs, DateTimeOffset now)
+    /// <summary>
+    /// Returns the user who added a video that is (or was meant to be) in the library:
+    /// the adder of the newest job that delivered it. Null when the plugin never added it
+    /// (downloaded through MeTube's own page, for example); then only admins may delete.
+    /// </summary>
+    public async Task<Guid?> FindOwnerAsync(string videoId, CancellationToken cancellationToken = default) =>
+        (await FindOwnerJobAsync(videoId, cancellationToken).ConfigureAwait(false))?.UserId;
+
+    /// <summary>Returns a copy of the job that makes its adder the owner of a video (see <see cref="FindOwnerAsync"/>).</summary>
+    public async Task<JobRecord?> FindOwnerJobAsync(string videoId, CancellationToken cancellationToken = default)
     {
-        jobs.RemoveAll(j => !j.IsOpen && now - j.UpdatedUtc > KeepClosedFor);
-        if (jobs.Count <= MaxJobs)
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            return;
+            return Load()
+                .Where(j => j.VideoId == videoId && j.State is JobState.InLibrary or JobState.Downloaded or JobState.Finished)
+                .OrderByDescending(j => j.CreatedUtc)
+                .FirstOrDefault()
+                ?.Clone();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>Marks every delivered job for a video as deleted, so nothing offers Play for it any more.</summary>
+    public async Task MarkDeletedAsync(string videoId, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var jobs = Load();
+            var changed = false;
+            foreach (var job in jobs.Where(j => j.VideoId == videoId && j.State is JobState.InLibrary or JobState.Downloaded or JobState.Finished))
+            {
+                job.State = JobState.Deleted;
+                job.ItemId = null;
+                job.UpdatedUtc = now;
+                _progress.TryRemove(job.Id, out _);
+                changed = true;
+            }
+
+            if (changed)
+            {
+                await SaveAsync(jobs, now).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Records that videos moved to another folder (a merge). Their Jellyfin items are
+    /// replaced by new ones at the new place, so delivered jobs go back to Finished and
+    /// the watcher picks up the new item, which brings back the Play button.
+    /// </summary>
+    public async Task<int> RelocateAsync(IReadOnlyCollection<MovedVideo> moves, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        if (moves.Count == 0)
+        {
+            return 0;
         }
 
-        var excess = jobs.Count - MaxJobs;
-        var oldestClosed = jobs.Where(j => !j.IsOpen).OrderBy(j => j.UpdatedUtc).Take(excess).ToHashSet();
-        jobs.RemoveAll(oldestClosed.Contains);
+        var byVideo = moves.GroupBy(m => m.VideoId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Last().RelativePath, StringComparer.Ordinal);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var jobs = Load();
+            var changed = 0;
+            foreach (var job in jobs.Where(j => j.State is JobState.InLibrary or JobState.Downloaded or JobState.Finished))
+            {
+                if (!byVideo.TryGetValue(job.VideoId, out var path))
+                {
+                    continue;
+                }
+
+                job.Filename = path;
+                job.ItemId = null;
+                job.State = JobState.Finished;
+                job.FinishedUtc = now;
+                job.UpdatedUtc = now;
+                changed++;
+            }
+
+            if (changed > 0)
+            {
+                await SaveAsync(jobs, now).ConfigureAwait(false);
+            }
+
+            return changed;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Drops closed jobs older than 30 days and keeps at most <see cref="MaxJobs"/> of
+    /// them. Jobs whose video is (or should be) in the library are kept: they record who
+    /// added it, which is what decides who may delete it. They do not count toward the
+    /// cap, so a large library never pushes fresh failures (which count toward the daily
+    /// limit) out of the store.
+    /// </summary>
+    internal static void Prune(List<JobRecord> jobs, DateTimeOffset now)
+    {
+        static bool Prunable(JobRecord j) => !j.IsOpen && j.State is not (JobState.InLibrary or JobState.Downloaded);
+
+        jobs.RemoveAll(j => Prunable(j) && now - j.UpdatedUtc > KeepClosedFor);
+
+        var prunable = jobs.Where(Prunable).OrderBy(j => j.UpdatedUtc).ToList();
+        if (prunable.Count > MaxJobs)
+        {
+            var drop = prunable.Take(prunable.Count - MaxJobs).ToHashSet();
+            jobs.RemoveAll(drop.Contains);
+        }
+
+        if (jobs.Count > HardCap)
+        {
+            var drop = jobs.Where(j => !j.IsOpen).OrderBy(j => j.UpdatedUtc).Take(jobs.Count - HardCap).ToHashSet();
+            jobs.RemoveAll(drop.Contains);
+        }
     }
 
     private List<JobRecord> Load()

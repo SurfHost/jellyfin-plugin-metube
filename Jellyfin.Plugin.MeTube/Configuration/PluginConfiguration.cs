@@ -22,6 +22,13 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public string Folder { get; set; } = "youtube";
 
+    /// <summary>
+    /// Gets or sets the name of MeTube's temp folder (its TEMP_DIR) inside the library
+    /// folder. yt-dlp leaves empty channel folders there; the plugin removes them while
+    /// MeTube is idle. Empty switches the cleanup off.
+    /// </summary>
+    public string TempFolderName { get; set; } = ".metube-tmp";
+
     /// <summary>Gets or sets the MeTube presets applied to every download.</summary>
     public string[] Presets { get; set; } = new[] { "jellyfin" };
 

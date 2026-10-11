@@ -29,6 +29,15 @@ public sealed class VideoResult
     /// <summary>Gets or sets the view count text, for example "1.2M views".</summary>
     public string? ViewsText { get; set; }
 
+    /// <summary>Gets or sets the exact view count, when YouTube gave it, for sorting.</summary>
+    public long? ViewCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the approximate age in seconds, parsed from the relative upload date
+    /// ("3 days ago"), for sorting. Null when the text could not be read.
+    /// </summary>
+    public long? AgeSeconds { get; set; }
+
     /// <summary>Gets or sets a value indicating whether the video is a live stream.</summary>
     public bool IsLive { get; set; }
 
