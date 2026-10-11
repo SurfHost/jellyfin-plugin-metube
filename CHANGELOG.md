@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.2] - 2026-10-11
+
+- Fixed: the YouTube menu entry did not appear when another plugin also adds its script to Jellyfin's start page by answering that page itself (GuestPass 0.2.x does this). MeTube now wraps such plugins instead of being skipped by them, and both scripts load.
+- Test connection now reports when no page with the menu entry has been served since startup.
+
 ## [0.1.1] - 2026-10-11
 
 - Setup guide: the library folder and MeTube address are described generically instead of naming one particular drive letter and port. No code changes.

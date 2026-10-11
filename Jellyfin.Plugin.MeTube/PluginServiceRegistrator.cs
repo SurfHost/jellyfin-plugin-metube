@@ -36,8 +36,14 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         // Startup filters are resolved from the root provider, so these must be
         // singletons (a scoped registration throws under scope validation).
+        //
+        // Inserted at the front, not appended: the first registered startup filter
+        // becomes the outermost middleware. Other plugins that inject into index.html
+        // by answering the request themselves (GuestPass up to 0.2.x does) never call
+        // the rest of the pipeline, so a filter behind them is simply skipped. In
+        // front, this one wraps them and patches whatever page they produce.
         serviceCollection.AddSingleton<WebInjectionStatus>();
-        serviceCollection.AddSingleton<IStartupFilter, WebInjectionStartupFilter>();
+        serviceCollection.Insert(0, ServiceDescriptor.Singleton<IStartupFilter, WebInjectionStartupFilter>());
 
         serviceCollection.AddSingleton<YouTubeGuard>();
         serviceCollection.AddSingleton<InnerTubeClient>();

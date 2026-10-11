@@ -304,14 +304,18 @@ public sealed class MeTubeController : ControllerBase
             }
         }
 
-        result.InjectionOk = config.InjectionEnabled && _injection.FilterInstalled && _injection.LastError is null;
+        // The settings page itself was loaded through index.html, so a working filter
+        // has served at least one patched page by the time anyone presses Test.
+        result.InjectionOk = config.InjectionEnabled && _injection.FilterInstalled && _injection.LastError is null && _injection.ServedCount > 0;
         result.InjectionDetail = !config.InjectionEnabled
             ? "Menu entry is switched off."
             : !_injection.FilterInstalled
                 ? "The injection filter is not active. Restart Jellyfin."
                 : _injection.LastError is not null
                     ? "Last error: " + _injection.LastError
-                    : string.Format(CultureInfo.InvariantCulture, "Active; served {0} page(s) since startup.", _injection.ServedCount);
+                    : _injection.ServedCount == 0
+                        ? "No page with the menu entry has been served since startup. Reload the page; if this stays at 0, another plugin may be answering index.html before MeTube."
+                        : string.Format(CultureInfo.InvariantCulture, "Active; served {0} page(s) since startup.", _injection.ServedCount);
 
         return result;
     }
