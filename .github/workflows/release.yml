@@ -148,13 +148,13 @@ jobs:
           jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S.0000000Z)" '.timestamp = $ts' "$META" > meta.json
           # -j flattens paths: Jellyfin extracts the zip verbatim into
           # <plugins>/<name>_<version>/ and a nested folder would break it.
-          zip -j "metube_$VERSION.zip" publish/Jellyfin.Plugin.MeTube.dll meta.json
+          zip -j "metube_$VERSION.zip" publish/Jellyfin.Plugin.MeTube.dll meta.json logo.png
 
-          # Exactly these two files. A private copy of a Jellyfin or framework
-          # assembly would give the startup filter and controllers a second type
-          # identity in the plugin load context.
-          FILES=$(unzip -Z1 "metube_$VERSION.zip" | sort | tr '\n' ' ')
-          if [ "$FILES" != "Jellyfin.Plugin.MeTube.dll meta.json " ]; then
+          # Exactly these three files (meta.json's imagePath names logo.png). A
+          # private copy of a Jellyfin or framework assembly would give the startup
+          # filter and controllers a second type identity in the plugin load context.
+          FILES=$(unzip -Z1 "metube_$VERSION.zip" | LC_ALL=C sort | tr '\n' ' ')
+          if [ "$FILES" != "Jellyfin.Plugin.MeTube.dll logo.png meta.json " ]; then
             echo "Unexpected package contents: $FILES" >&2
             exit 1
           fi

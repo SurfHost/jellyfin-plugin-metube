@@ -6,7 +6,7 @@
     "overview": "Search YouTube inside Jellyfin and add videos to your library through MeTube.",
     "owner": "SurfHost",
     "category": "General",
-    "imageUrl": "",
+    "imageUrl": "https://raw.githubusercontent.com/SurfHost/jellyfin-plugin-metube/main/logo.png",
     "versions": [
       {
         "version": "0.3.0",

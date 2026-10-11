@@ -1,5 +1,7 @@
 # MeTube for Jellyfin
 
+<p align="center"><img src="logo.png" alt="MeTube for Jellyfin" width="640"></p>
+
 Search YouTube inside Jellyfin, press **Add**, and watch the video from your own server, including when the internet is down.
 
 The plugin adds a **YouTube** entry to Jellyfin's menu (web client and the Jellyfin Android app) for the users you choose. They search

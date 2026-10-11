@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.1] - 2026-10-12
+
+- A logo for the plugin, shown in Jellyfin's plugin catalog and on the installed plugins page.
+
 ## [0.3.0] - 2026-10-11
 
 - Merge folders from Jellyfin's own library view: select two or more YouTube channel folders (long-press or right-click a folder), open the "..." menu and choose "Merge folders". The YouTube page's Folders tab opens with those folders selected; pick the folder to keep and confirm. Administrators only.
