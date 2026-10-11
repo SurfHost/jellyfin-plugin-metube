@@ -13,8 +13,8 @@
         "changelog": "A logo for the plugin, shown in Jellyfin's plugin catalog and on the installed plugins page.",
         "targetAbi": "12.2.0.0",
         "sourceUrl": "https://github.com/SurfHost/jellyfin-plugin-metube/releases/download/v0.3.1/metube_0.3.1.zip",
-        "checksum": "0c1dedb840c6d07bf959697014347bbb",
-        "timestamp": "2026-10-11T23:23:57Z"
+        "checksum": "eaf27599513f70b6d75950c3a4eeacb7",
+        "timestamp": "2026-10-11T23:36:37Z"
       },
       {
         "version": "0.3.0",
