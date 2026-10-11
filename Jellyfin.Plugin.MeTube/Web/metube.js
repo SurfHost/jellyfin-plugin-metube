@@ -17,7 +17,7 @@
         return;
     }
 
-    var VERSION = '0.1.0';
+    var VERSION = '0.1.1';
     var ENTRY_ATTR = 'data-metube-entry';
     var ICON = 'ondemand_video';
     var POLL_ACTIVE_MS = 4000;

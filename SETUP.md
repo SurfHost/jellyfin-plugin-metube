@@ -11,8 +11,8 @@ The steps below assume TrueNAS SCALE apps. Adjust the paths for other setups.
 ## 1. Library folder
 
 Create a plain folder named `youtube` (not a separate dataset) in the dataset Jellyfin already reads, next to `movies` and `shows`.
-Over SMB that is `J:\youtube`. It inherits the dataset's permissions. The TrueNAS `apps` user (uid/gid 568) needs write access, which it has
-when Radarr/Sonarr already write there.
+You can create it over your SMB share or in the TrueNAS shell. It inherits the dataset's permissions. The TrueNAS `apps` user
+(uid/gid 568) needs write access, which it has when Radarr/Sonarr already write there.
 
 Check in Jellyfin → Dashboard → Libraries that the folder Jellyfin sees for your other libraries (e.g. `/media/movies`) sits in the same
 mount, so `/media/youtube` exists inside Jellyfin too. No existing library should point at the dataset root itself.
@@ -86,7 +86,7 @@ Leave **`ALLOW_YTDL_OPTIONS_OVERRIDES`** unset (false). Save. The app redeploys,
 
 MeTube has no login. Remove any public hostname that points at it, such as a Cloudflare Tunnel public hostname
 (Zero Trust → Networks → Tunnels → your tunnel → Public Hostnames → delete). The plugin reaches MeTube over the LAN
-(`http://<nas-ip>:30094`), and Jellyfin's own login protects everything users can do.
+(`http://<nas-ip>:<metube-port>`), and Jellyfin's own login protects everything users can do.
 
 ## 4. Jellyfin library
 

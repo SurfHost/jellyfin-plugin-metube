@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.1] - 2026-10-11
+
+- Setup guide: the library folder and MeTube address are described generically instead of naming one particular drive letter and port. No code changes.
+
 ## [0.1.0] - 2026-10-11
 
 - First release, for Jellyfin 12.2.
