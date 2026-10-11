@@ -5,7 +5,8 @@
  * allowed, and a YouTube page at #/youtube that lives inside Jellyfin's own layout:
  * the header and navigation stay, Back and the Android back button work, and the
  * page survives a reload (search, sort and filters are in the URL). Administrators
- * also get a Folders tab to merge channel folders.
+ * also get a Folders tab to merge channel folders, reachable from Jellyfin's own
+ * selection menu too ("Merge folders" when two or more channel folders are selected).
  *
  * Jellyfin has no route for #/youtube, so its router shows a "page not found" view
  * there; this script hides that view with CSS and shows its own page in the same
@@ -22,7 +23,7 @@
         return;
     }
 
-    var VERSION = '0.2.0';
+    var VERSION = '0.3.0';
     var ROUTE_RE = /^#!?\/youtube(?:[\/?]|$)/i;
     var ENTRY_ATTR = 'data-metube-entry';
     var ICON = 'ondemand_video';
@@ -43,7 +44,7 @@
         routeKey: null,
         query: '',
         filters: { sort: 'relevance', duration: 'any', date: 'any' },
-        order: 'default',
+        order: 'newest',
         continuation: null,
         searching: false,
         searchSeq: 0,
@@ -63,7 +64,10 @@
         folderNotice: '',
         merge: null,
         mergeBusy: false,
-        focusVideoId: null
+        focusVideoId: null,
+        pendingSelect: null,
+        fromLibrary: false,
+        dismissing: {}
     };
 
     // ---------------------------------------------------------------- i18n
@@ -105,7 +109,11 @@
             rescanNote: 'Jellyfin is updating the library; this can take a minute.',
             alsoReceives: 'Also gets new videos from: {0}',
             mergedChannels: 'Merged channels', stopRedirect: 'Stop redirecting',
-            redirectNote: 'New downloads from the channel on the left go into the folder on the right.'
+            redirectNote: 'New downloads from the channel on the left go into the folder on the right.',
+            mergeFolders: 'Merge folders',
+            dismiss: 'Remove from list', cleanList: 'Clean up list', cleaning: 'Cleaning up…',
+            selectionGone: 'The folders selected in the library were not found. They may have been merged or removed already.',
+            backToLibrary: 'Back to the library'
         },
         nl: {
             search: 'Zoeken', added: 'Toegevoegde video\'s',
@@ -142,7 +150,11 @@
             rescanNote: 'Jellyfin werkt de bibliotheek bij; dat kan een minuut duren.',
             alsoReceives: 'Krijgt ook nieuwe video\'s van: {0}',
             mergedChannels: 'Samengevoegde kanalen', stopRedirect: 'Niet meer omleiden',
-            redirectNote: 'Nieuwe downloads van het kanaal links komen in de map rechts.'
+            redirectNote: 'Nieuwe downloads van het kanaal links komen in de map rechts.',
+            mergeFolders: 'Mappen samenvoegen',
+            dismiss: 'Uit lijst verwijderen', cleanList: 'Lijst opschonen', cleaning: 'Opschonen…',
+            selectionGone: 'De mappen die in de bibliotheek waren geselecteerd zijn niet gevonden. Misschien zijn ze al samengevoegd of verwijderd.',
+            backToLibrary: 'Terug naar de bibliotheek'
         }
     };
 
@@ -309,9 +321,15 @@
         addPart('sort', state.filters.sort, 'relevance');
         addPart('duration', state.filters.duration, 'any');
         addPart('date', state.filters.date, 'any');
-        addPart('order', state.order, 'default');
+        addPart('order', state.order, impliedOrder(state.filters.sort));
         addPart('tab', state.tab, 'search');
         return parts.join('&');
+    }
+
+    // The order an address without "order=" means: newest first for a relevance search
+    // (the default), YouTube's own order when a popularity sort was asked for.
+    function impliedOrder(sort) {
+        return sort === 'relevance' ? 'newest' : 'none';
     }
 
     // Records search, sort, filters and tab in the URL without a new history entry,
@@ -407,8 +425,18 @@
         };
         var changed = filters.sort !== state.filters.sort || filters.duration !== state.filters.duration || filters.date !== state.filters.date;
         state.filters = filters;
-        state.order = LOCAL_ORDERS[p.order] ? p.order : 'default';
+        state.order = LOCAL_ORDERS[p.order] || p.order === 'none' ? p.order : impliedOrder(filters.sort);
         state.tab = p.tab === 'added' || p.tab === 'folders' ? p.tab : 'search';
+        // From Jellyfin's selection menu: the folders to merge, by item id. Used once;
+        // the next address update drops it.
+        var picked = parseIdList(p.select);
+        if (picked.length >= 2) {
+            state.tab = 'folders';
+            state.pendingSelect = picked;
+            state.fromLibrary = true;
+            state.folderNotice = '';
+            state.merge = null;
+        }
         var q = (p.q || '').trim();
         if (q && (q !== state.query || changed || !state.items.length)) {
             state.query = q;
@@ -472,7 +500,7 @@
         window.clearTimeout(state.pollTimer);
         state.pollTimer = null;
         state.filters = { sort: 'relevance', duration: 'any', date: 'any' };
-        state.order = 'default';
+        state.order = 'newest';
         state.scrollY = 0;
         state.focusVideoId = null;
         state.query = '';
@@ -490,6 +518,10 @@
         state.folderSel = {};
         state.folderNotice = '';
         state.merge = null;
+        state.pendingSelect = null;
+        state.fromLibrary = false;
+        state.dismissing = {};
+        folderIds.map = null;
         state.routeKey = null;
         if (state.page && state.page.parentNode) {
             state.page.parentNode.removeChild(state.page);
@@ -642,6 +674,7 @@
             checkMe();
             return;
         }
+        checkSelectionMenu();
         // Admins can switch the menu entries off; the page itself keeps working.
         if (!allowed() || pick(state.me, 'InjectionEnabled') === false) {
             removeEntries();
@@ -711,11 +744,13 @@
             '#mtjPage .mtj-note{font-size:.85em;color:' + secondary + ';}',
             '#mtjPage .mtj-note.mtj-err{color:var(--jf-palette-error-main,#ff8a80);}',
             '#mtjPage .mtj-more{display:block;margin:1.2em auto 0;}',
-            '#mtjPage .mtj-row{display:flex;align-items:center;background:' + paper + ';border-radius:var(--jf-card-borderRadius,.3em);padding:.5em;margin:0 0 .5em;max-width:1100px;}',
+            '#mtjPage .mtj-row{display:flex;flex-wrap:wrap;align-items:center;background:' + paper + ';border-radius:var(--jf-card-borderRadius,.3em);padding:.5em;margin:0 0 .5em;max-width:1100px;}',
             '#mtjPage .mtj-row>*+*{margin-left:.8em;}',
             '#mtjPage .mtj-row img{width:120px;height:68px;object-fit:cover;border-radius:4px;flex:none;background:#000;}',
-            '#mtjPage .mtj-row .mtj-info{padding:0;min-width:0;}',
-            '#mtjPage .mtj-row .mtj-actions{padding:0;margin-left:auto;}',
+            '#mtjPage .mtj-row .mtj-info{padding:0;min-width:0;flex:1 1 10em;}',
+            '#mtjPage .mtj-row .mtj-actions{padding:0;margin-left:auto;justify-content:flex-end;}',
+            '#mtjPage .mtj-btn.mtj-icon{background:transparent;color:inherit;border:1px solid ' + divider + ';padding:.4em .6em;line-height:1;}',
+            '#mtjPage .mtj-btn.mtj-icon .material-icons{font-size:1.2em;vertical-align:middle;}',
             '#mtjPage .mtj-toolbar{display:flex;align-items:center;flex-wrap:wrap;margin:0 0 .8em;}',
             '#mtjPage .mtj-toolbar>*+*{margin-left:.8em;}',
             '#mtjPage .mtj-folder{cursor:pointer;}',
@@ -729,7 +764,8 @@
             '#mtjPage .mtj-merge .mtj-actions{padding:.4em 0 0;}',
             '#mtjPage .mtj-h2{font-size:1.15em;font-weight:500;margin:1.6em 0 .4em;}',
             '#mtjPage .mtj-alias .mtj-name{font-weight:400;}',
-            '@media (max-width:600px){#mtjPage .mtj-grid{grid-template-columns:1fr;}#mtjPage .mtj-row img,#mtjPage .mtj-noimg{width:96px;height:54px;}#mtjPage .mtj-filters label{margin-right:.8em;}}'
+            '@media (max-width:600px){#mtjPage .mtj-grid{grid-template-columns:1fr;}#mtjPage .mtj-row img,#mtjPage .mtj-noimg{width:96px;height:54px;}#mtjPage .mtj-filters label{margin-right:.8em;}' +
+                '#mtjPage .mtj-row .mtj-actions{flex:1 1 100%;margin:.5em 0 0;}}'
         ].join('\n');
         (document.head || document.documentElement).appendChild(el('style', { id: 'mtj-style', text: css }));
     }
@@ -853,6 +889,7 @@
         state.focusVideoId = card && state.page && state.page.contains(card) ? card.getAttribute('data-video-id') : null;
         state.scrollY = window.pageYOffset || 0;
         state.visible = false;
+        state.fromLibrary = false;
         if (state.page) {
             state.page.classList.add('hide');
         }
@@ -913,6 +950,7 @@
             el('button', { type: 'button', className: 'mtj-btn mtj-secondary mtj-more', text: t('loadMore'), hidden: true, onclick: loadMore })
         ]);
         var addedPanel = el('section', { 'data-panel': 'added', hidden: true }, [
+            el('div', { className: 'mtj-toolbar', 'data-role': 'added-bar' }),
             el('div', { className: 'mtj-msg', 'data-role': 'added-msg' }),
             el('div', { 'data-role': 'list' })
         ]);
@@ -958,7 +996,7 @@
     // "Sort" mixes what YouTube can do (relevance, popularity: a new search) with what
     // only the page can do (newest, shortest, longest: reorder what is loaded).
     function buildFilters() {
-        var sortValue = state.order !== 'default' ? state.order : state.filters.sort;
+        var sortValue = state.order !== 'none' ? state.order : state.filters.sort;
         return el('div', { className: 'mtj-filters' }, [
             select('sort', t('sortBy'), [
                 ['relevance', t('relevance')], ['popularity', t('popularity')],
@@ -967,7 +1005,7 @@
                 if (SERVER_SORTS[value]) {
                     var changed = state.filters.sort !== value;
                     state.filters.sort = value;
-                    state.order = 'default';
+                    state.order = 'none';
                     if (changed) {
                         rerunSearch();
                     } else {
@@ -1035,7 +1073,7 @@
         if (state.source === 'metube') {
             lines.push(t('fallback'));
         }
-        if (state.order !== 'default' && state.items.length) {
+        if (state.order !== 'none' && state.items.length) {
             lines.push(t('localOrderNote'));
         }
         notice.textContent = lines.join(' ');
@@ -1131,7 +1169,7 @@
     // Stable sort (older engines' Array.sort is not), missing values last.
     function orderedItems() {
         var items = state.items.slice();
-        if (state.order === 'default') {
+        if (state.order === 'none') {
             return items;
         }
         var field = state.order === 'newest' ? 'AgeSeconds' : 'DurationSeconds';
@@ -1553,7 +1591,7 @@
         if (!list) {
             return;
         }
-        var sig = JSON.stringify(state.jobs) + JSON.stringify(state.addState);
+        var sig = JSON.stringify(state.jobs) + JSON.stringify(state.addState) + JSON.stringify(state.dismissing);
         if (sig === state.jobsSig && list.childNodes.length) {
             return;
         }
@@ -1569,6 +1607,7 @@
 
         list.textContent = '';
         setMessage('added-msg', state.jobs.length ? '' : t('emptyAdded'));
+        renderAddedBar();
         var showUser = pick(state.me, 'IsAdmin') === true;
         for (var i = 0; i < state.jobs.length; i++) {
             var job = state.jobs[i];
@@ -1594,7 +1633,11 @@
                 ]),
                 el('div', { className: 'mtj-actions' })
             ]);
-            fillActions(row.querySelector('.mtj-actions'), { VideoId: pick(job, 'VideoId'), Title: pick(job, 'Title'), Job: job, OwnJob: true });
+            var rowActions = row.querySelector('.mtj-actions');
+            fillActions(rowActions, { VideoId: pick(job, 'VideoId'), Title: pick(job, 'Title'), Job: job, OwnJob: true });
+            if (pick(job, 'CanDismiss') === true) {
+                rowActions.appendChild(dismissButton(pick(job, 'Id')));
+            }
             list.appendChild(row);
         }
 
@@ -1606,6 +1649,69 @@
                 focusQuietly(target);
             }
         }
+    }
+
+    function renderAddedBar() {
+        var bar = part('added-bar');
+        if (!bar) {
+            return;
+        }
+        bar.textContent = '';
+        var any = false;
+        for (var i = 0; i < state.jobs.length; i++) {
+            if (pick(state.jobs[i], 'CanDismiss') === true) {
+                any = true;
+            }
+        }
+        bar.hidden = !any;
+        if (any) {
+            bar.appendChild(el('button', {
+                type: 'button',
+                className: 'mtj-btn mtj-secondary',
+                disabled: !!state.dismissing.all,
+                text: state.dismissing.all ? t('cleaning') : t('cleanList'),
+                onclick: function () { dismiss(null); }
+            }));
+        }
+    }
+
+    function dismissButton(jobId) {
+        return el('button', {
+            type: 'button',
+            className: 'mtj-btn mtj-icon',
+            title: t('dismiss'),
+            'aria-label': t('dismiss'),
+            disabled: !!(state.dismissing[jobId] || state.dismissing.all),
+            onclick: function () { dismiss(jobId); }
+        }, [icon('close')]);
+    }
+
+    // Removes one entry (or, with no id, every failed or removed entry) from the list.
+    function dismiss(jobId) {
+        var key = jobId || 'all';
+        if (state.dismissing[key]) {
+            return;
+        }
+        state.dismissing[key] = true;
+        renderAdded();
+        var body = jobId ? { JobIds: [jobId] } : { All: true };
+        request('POST', 'MeTube/Jobs/Dismiss', body).then(function () {
+            delete state.dismissing[key];
+            var kept = [];
+            for (var i = 0; i < state.jobs.length; i++) {
+                var gone = jobId ? pick(state.jobs[i], 'Id') === jobId : pick(state.jobs[i], 'CanDismiss') === true;
+                if (!gone) {
+                    kept.push(state.jobs[i]);
+                }
+            }
+            state.jobs = kept;
+            renderAdded();
+            refreshJobs();
+        }).catch(function (error) {
+            delete state.dismissing[key];
+            setMessage('added-msg', error.message, true);
+            renderAdded();
+        });
     }
 
     // ---------------------------------------------------------------- folders (admins)
@@ -1626,6 +1732,8 @@
             }
             state.folders = pick(data, 'Folders') || [];
             state.aliases = pick(data, 'Aliases') || [];
+            rememberFolderIds(state.folders, uid);
+            var openAfter = applyPendingSelect();
             var names = {};
             for (var i = 0; i < state.folders.length; i++) {
                 names[pick(state.folders[i], 'Name')] = true;
@@ -1640,10 +1748,39 @@
             }
             setMessage('folders-msg', state.folderNotice);
             renderFolders();
+            if (openAfter) {
+                openMerge();
+            }
         }).catch(function (error) {
             state.foldersLoading = false;
             setMessage('folders-msg', error.message, true);
         });
+    }
+
+    // Selects the folders picked in Jellyfin's library view. Returns true when there are
+    // two or more, so the merge box opens right away.
+    function applyPendingSelect() {
+        var wanted = state.pendingSelect;
+        if (!wanted) {
+            return false;
+        }
+        state.pendingSelect = null;
+        var lookup = {};
+        for (var i = 0; i < wanted.length; i++) {
+            lookup[wanted[i]] = true;
+        }
+        state.folderSel = {};
+        state.merge = null;
+        var found = 0;
+        for (var j = 0; j < state.folders.length; j++) {
+            if (lookup[normalizeId(pick(state.folders[j], 'ItemId'))]) {
+                state.folderSel[pick(state.folders[j], 'Name')] = true;
+                found++;
+            }
+        }
+        state.folderNotice = found >= 2 ? '' : t('selectionGone');
+        writeRoute();
+        return found >= 2;
     }
 
     // Selected folder names, in list order.
@@ -1683,6 +1820,9 @@
         var bar = part('folders-bar');
         bar.textContent = '';
         bar.appendChild(el('button', { type: 'button', className: 'mtj-btn', disabled: selected.length < 2 || state.mergeBusy || !!state.merge, text: t('merge'), onclick: openMerge }));
+        if (state.fromLibrary && !state.merge) {
+            bar.appendChild(el('button', { type: 'button', className: 'mtj-btn mtj-secondary', disabled: state.mergeBusy, text: t('backToLibrary'), onclick: backToLibrary }));
+        }
         if (selected.length) {
             bar.appendChild(el('span', { className: 'mtj-note', text: t('selected', selected.length) }));
         }
@@ -1892,6 +2032,218 @@
             setMessage('folders-msg', error.message, true);
             loadFolders();
         });
+    }
+
+    function backToLibrary() {
+        state.fromLibrary = false;
+        try {
+            if (window.Emby && window.Emby.Page && typeof window.Emby.Page.back === 'function') {
+                window.Emby.Page.back();
+                return;
+            }
+        } catch (e) {
+            // Fall through to the browser's own Back.
+        }
+        history.back();
+    }
+
+    // ---------------------------------------------------------------- Jellyfin's selection menu (admins)
+
+    // Jellyfin's library views have a multi-select mode (long-press or right-click a
+    // card); its "..." button opens an action sheet. When the selection is two or more
+    // channel folders of the YouTube library, an administrator gets "Merge folders"
+    // there, which opens the Folders tab with those folders selected. Jellyfin's menu
+    // ignores ids it does not know, so the extra entry only does what this script does.
+
+    var MERGE_ITEM_ID = 'mtj-merge';
+    var folderIds = { map: null, user: null, at: 0, pending: null, panel: null };
+
+    function normalizeId(id) {
+        return String(id || '').replace(/-/g, '').toLowerCase();
+    }
+
+    function parseIdList(text) {
+        var result = [];
+        var parts = String(text || '').split(',');
+        for (var i = 0; i < parts.length && result.length < 200; i++) {
+            var id = normalizeId(parts[i]);
+            if (/^[0-9a-f]{32}$/.test(id) && result.indexOf(id) < 0) {
+                result.push(id);
+            }
+        }
+        return result;
+    }
+
+    function rememberFolderIds(folders, uid) {
+        var map = {};
+        for (var i = 0; i < folders.length; i++) {
+            var id = normalizeId(pick(folders[i], 'ItemId'));
+            if (id) {
+                map[id] = pick(folders[i], 'Name');
+            }
+        }
+        folderIds.map = map;
+        folderIds.user = uid;
+        folderIds.at = Date.now();
+    }
+
+    // The channel folders' item ids, at most maxAge old.
+    function loadFolderIds(maxAge) {
+        var uid = currentUserId();
+        if (folderIds.map && folderIds.user === uid && Date.now() - folderIds.at <= maxAge) {
+            return Promise.resolve(folderIds.map);
+        }
+        if (!folderIds.pending) {
+            folderIds.pending = request('GET', 'MeTube/Admin/Folders').then(function (data) {
+                folderIds.pending = null;
+                if (uid !== currentUserId()) {
+                    return null;
+                }
+                rememberFolderIds(pick(data, 'Folders') || [], uid);
+                return folderIds.map;
+            }, function () {
+                folderIds.pending = null;
+                return null;
+            });
+        }
+        return folderIds.pending;
+    }
+
+    // The cards ticked in Jellyfin's selection mode.
+    function selectedCards() {
+        var boxes = document.querySelectorAll('.itemSelectionPanel .chkItemSelect');
+        var cards = [];
+        for (var i = 0; i < boxes.length; i++) {
+            var card = boxes[i].checked && boxes[i].closest ? boxes[i].closest('.card[data-id]') : null;
+            if (card && cards.indexOf(card) < 0) {
+                cards.push(card);
+            }
+        }
+        return cards;
+    }
+
+    function checkSelectionMenu() {
+        if (!isAdmin()) {
+            return;
+        }
+        var panel = document.querySelector('.selectionCommandsPanel');
+        if (!panel) {
+            folderIds.panel = null;
+            return;
+        }
+        if (folderIds.panel !== panel) {
+            // Selecting just started: fetch the folder list now, so it is ready by the
+            // time the menu opens. Fresh each time: downloads add folders.
+            folderIds.panel = panel;
+            loadFolderIds(0);
+        }
+        var sheet = document.querySelector('.actionSheet');
+        if (!sheet || sheet.getAttribute('data-mtj-seen') || !sheet.querySelector('.actionSheetMenuItem[data-id="selectall"]')) {
+            return;
+        }
+        sheet.setAttribute('data-mtj-seen', '1');
+        var cards = selectedCards();
+        if (cards.length < 2) {
+            return;
+        }
+        var ids = [];
+        for (var i = 0; i < cards.length; i++) {
+            if (cards[i].getAttribute('data-isfolder') !== 'true') {
+                return;
+            }
+            ids.push(normalizeId(cards[i].getAttribute('data-id')));
+        }
+        loadFolderIds(60000).then(function (map) {
+            if (!map || !document.body.contains(sheet)) {
+                return;
+            }
+            for (var j = 0; j < ids.length; j++) {
+                if (!map[ids[j]]) {
+                    return; // Not (all) channel folders of the YouTube library.
+                }
+            }
+            addMergeMenuItem(sheet, ids);
+        });
+    }
+
+    function addMergeMenuItem(sheet, ids) {
+        if (sheet.querySelector('[data-id="' + MERGE_ITEM_ID + '"]')) {
+            return;
+        }
+        var template = sheet.querySelector('.actionSheetMenuItem[data-id="markplayed"]') || sheet.querySelector('.actionSheetMenuItem');
+        if (!template) {
+            return;
+        }
+        // A copy of one of Jellyfin's own entries, so it looks and behaves the same in
+        // every layout (phone, desktop, TV).
+        var item = template.cloneNode(true);
+        item.setAttribute('data-id', MERGE_ITEM_ID);
+        item.removeAttribute('autofocus');
+        var iconNode = item.querySelector('.actionsheetMenuItemIcon');
+        if (iconNode) {
+            iconNode.className = 'actionsheetMenuItemIcon listItemIcon listItemIcon-transparent material-icons call_merge';
+            iconNode.style.visibility = '';
+        }
+        var text = item.querySelector('.actionSheetItemText');
+        if (text) {
+            text.textContent = t('mergeFolders');
+        }
+        var extras = item.querySelectorAll('.listItemBodyText.secondary, .actionSheetItemAsideText');
+        for (var i = 0; i < extras.length; i++) {
+            extras[i].parentNode.removeChild(extras[i]);
+        }
+        var after = sheet.querySelector('.actionSheetMenuItem[data-id="delete"]') || sheet.querySelector('.actionSheetMenuItem[data-id="playlist"]');
+        if (after) {
+            after.parentNode.insertBefore(item, after.nextSibling);
+        } else {
+            template.parentNode.insertBefore(item, template);
+        }
+        item.addEventListener('click', function () {
+            // Jellyfin closes the menu itself (its own click handler sees the entry) and
+            // then steps back through history; navigate only once that is done.
+            var started = false;
+            var go = function () {
+                if (started) {
+                    return;
+                }
+                started = true;
+                window.setTimeout(function () { openMergeFromSelection(ids); }, 0);
+            };
+            sheet.addEventListener('close', go);
+            window.setTimeout(go, 2000);
+        });
+        keepOnScreen(sheet);
+    }
+
+    // The menu was positioned before the extra entry made it taller.
+    function keepOnScreen(sheet) {
+        if (sheet.style.position !== 'fixed') {
+            return; // Full-screen (TV) or laid out by CSS.
+        }
+        var rect = sheet.getBoundingClientRect();
+        var overflow = rect.bottom - ((window.innerHeight || document.documentElement.clientHeight) - 10);
+        if (overflow > 0) {
+            sheet.style.top = Math.max(10, rect.top - overflow) + 'px';
+        }
+    }
+
+    function openMergeFromSelection(ids) {
+        var close = document.querySelector('.selectionCommandsPanel .btnCloseSelectionPanel');
+        if (close) {
+            close.click();
+        }
+        var qs = routeQuery().replace(/(^|&)tab=[^&]*/, '');
+        qs = (qs ? qs.replace(/^&/, '') + '&' : '') + 'tab=folders&select=' + ids.join(',');
+        var path = '/youtube?' + qs;
+        try {
+            if (window.Emby && window.Emby.Page && typeof window.Emby.Page.show === 'function') {
+                window.Emby.Page.show(path);
+                return;
+            }
+        } catch (e) {
+            // Fall through to a plain hash change.
+        }
+        location.hash = '#' + path;
     }
 
     // ---------------------------------------------------------------- boot

@@ -32,6 +32,7 @@ namespace Jellyfin.Plugin.MeTube.Api;
 public sealed class MeTubeController : ControllerBase
 {
     private const int StatusJobLimit = 50;
+    private const string RemovedState = "Removed";
 
     private readonly SearchService _search;
     private readonly JobService _jobs;
@@ -261,11 +262,44 @@ public sealed class MeTubeController : ControllerBase
                 .ToList();
         }
 
+        // The list leaves out what the user removed from it and videos that are no
+        // longer in the library (deleted here, in Jellyfin's own menu, or on disk).
         return jobs
-            .Where(j => isAdmin || j.UserId == userId || (j.RequestedBy?.Contains(userId) ?? false))
-            .Take(StatusJobLimit)
+            .Where(j => (isAdmin || j.UserId == userId || (j.RequestedBy?.Contains(userId) ?? false)) && !j.Dismissed && j.State != JobState.Deleted)
             .Select(j => ToDto(j, isAdmin, userId, owners))
+            .Where(d => d.State != RemovedState)
+            .Take(StatusJobLimit)
             .ToList();
+    }
+
+    /// <summary>
+    /// Removes entries from the caller's "Added videos" list: failed, lost and removed
+    /// downloads (never one that is still on its way or playable). Administrators can
+    /// remove anyone's entries; others only their own. With All, every such entry goes.
+    /// </summary>
+    [HttpPost("Jobs/Dismiss")]
+    public async Task<ActionResult<DismissResponseDto>> Dismiss([FromBody] DismissRequestDto request, CancellationToken cancellationToken)
+    {
+        NoStore();
+        if (!TryGetCaller(out var userId, out var isAdmin, out var denied))
+        {
+            return denied;
+        }
+
+        var wanted = (request?.JobIds ?? new List<Guid>()).Take(500).ToHashSet();
+        var all = request?.All == true;
+        if (!all && wanted.Count == 0)
+        {
+            return BadRequest(new ErrorDto { Error = "Nothing to remove." });
+        }
+
+        var jobs = await _store.ListAsync(cancellationToken).ConfigureAwait(false);
+        var ids = jobs
+            .Where(j => (all || wanted.Contains(j.Id)) && CanDismiss(j, isAdmin, userId))
+            .Select(j => j.Id)
+            .ToList();
+        var count = await _store.DismissAsync(ids, DateTimeOffset.UtcNow, CancellationToken.None).ConfigureAwait(false);
+        return new DismissResponseDto { Count = count };
     }
 
     /// <summary>
@@ -342,7 +376,7 @@ public sealed class MeTubeController : ControllerBase
         return new FoldersResponseDto
         {
             Folders = _merger.ListFolders()
-                .Select(f => new FolderDto { Name = f.Name, VideoCount = f.VideoCount, SampleItemId = f.SampleItemId })
+                .Select(f => new FolderDto { Name = f.Name, VideoCount = f.VideoCount, SampleItemId = f.SampleItemId, ItemId = f.ItemId })
                 .ToList(),
             Aliases = _aliases.GetAll()
                 .OrderBy(a => a.Key, StringComparer.CurrentCultureIgnoreCase)
@@ -496,10 +530,53 @@ public sealed class MeTubeController : ControllerBase
     /// </summary>
     private JobDto ToDto(JobRecord job, bool isAdmin, Guid callerId, IReadOnlyDictionary<string, Guid>? owners)
     {
-        var itemGone = job.State == JobState.InLibrary && job.ItemId is { } itemId && !_libraryIndex.ItemExists(itemId);
-        var canDelete = job.State is JobState.InLibrary or JobState.Downloaded
+        var view = job;
+        var itemGone = false;
+        if (job.State == JobState.InLibrary && job.ItemId is { } itemId && !_libraryIndex.ItemExists(itemId))
+        {
+            // The item is gone. With the file still there (a rescan or merge replaced
+            // the item) point at the new item, or say "not visible yet"; without it, the
+            // video was deleted ("Removed").
+            if (_libraryIndex.TryFindFile(job.VideoId, out var path))
+            {
+                view = job.Clone();
+                view.ItemId = _libraryIndex.ResolveItemId(job.VideoId, path);
+                if (view.ItemId is null)
+                {
+                    view.State = JobState.Downloaded;
+                }
+            }
+            else
+            {
+                itemGone = true;
+            }
+        }
+
+        var canDelete = view.State is JobState.InLibrary or JobState.Downloaded
             && (isAdmin || (owners is not null && owners.TryGetValue(job.VideoId, out var owner) && owner == callerId));
-        return JobDto.From(job, _store.GetProgress(job.Id), isAdmin, itemGone, canDelete);
+        var dto = JobDto.From(view, _store.GetProgress(job.Id), isAdmin, itemGone, canDelete);
+        dto.CanDismiss = !job.Dismissed && (isAdmin || job.UserId == callerId) && (itemGone || IsDismissableState(view.State));
+        return dto;
+    }
+
+    /// <summary>States a user may clear from their list: nothing to play and nothing on its way.</summary>
+    private static bool IsDismissableState(JobState state) =>
+        state is JobState.Failed or JobState.Missing or JobState.Downloaded or JobState.Deleted;
+
+    private bool CanDismiss(JobRecord job, bool isAdmin, Guid callerId)
+    {
+        if (job.Dismissed || job.IsOpen || !(isAdmin || job.UserId == callerId))
+        {
+            return false;
+        }
+
+        if (IsDismissableState(job.State))
+        {
+            return true;
+        }
+
+        // An InLibrary job whose video is gone from the library.
+        return job.State == JobState.InLibrary && !_libraryIndex.TryFindFile(job.VideoId, out _);
     }
 
     /// <summary>

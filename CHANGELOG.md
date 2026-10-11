@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0] - 2026-10-11
+
+- Merge folders from Jellyfin's own library view: select two or more YouTube channel folders (long-press or right-click a folder), open the "..." menu and choose "Merge folders". The YouTube page's Folders tab opens with those folders selected; pick the folder to keep and confirm. Administrators only.
+- "Newest first" is now the default sort for search results. It orders the results loaded so far; choose Relevance for YouTube's own order.
+- "Added videos" cleans itself up: videos deleted from the library (with the plugin's Delete, in Jellyfin's own menu, or on disk) disappear from the list. Failed or lost downloads get a remove button, and "Clean up list" removes them all at once. The entries are only hidden: failed adds still count toward the daily limit.
+- Fixed: on a phone, the rows in "Added videos" were squeezed so narrow that the title disappeared; the buttons now move to a line of their own.
+
 ## [0.2.0] - 2026-10-11
 
 - YouTube is now a page inside Jellyfin instead of a separate full-screen window: the header and navigation stay, there is no close button, and Back, the Android back button and page reloads all work. The address (`#/youtube?q=…`) keeps the search, sort and filters.

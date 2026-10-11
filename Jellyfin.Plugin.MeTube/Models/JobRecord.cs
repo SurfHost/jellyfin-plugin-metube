@@ -96,6 +96,13 @@ public sealed class JobRecord
     /// </summary>
     public long MatchSinceNs { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the user removed this job from their
+    /// "Added videos" list. The record stays: it still counts toward the daily limit and,
+    /// for a video in the library, still says who may delete it.
+    /// </summary>
+    public bool Dismissed { get; set; }
+
     /// <summary>Gets a value indicating whether the job still needs watching.</summary>
     public bool IsOpen => State is JobState.Queued or JobState.Downloading or JobState.Finished;
 

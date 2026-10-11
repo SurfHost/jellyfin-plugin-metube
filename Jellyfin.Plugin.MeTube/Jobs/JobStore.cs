@@ -297,6 +297,38 @@ public sealed class JobStore
         }
     }
 
+    /// <summary>Hides jobs from the "Added videos" list. Returns how many changed.</summary>
+    public async Task<int> DismissAsync(IReadOnlyCollection<Guid> ids, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        if (ids.Count == 0)
+        {
+            return 0;
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var jobs = Load();
+            var changed = 0;
+            foreach (var job in jobs.Where(j => !j.Dismissed && !j.IsOpen && ids.Contains(j.Id)))
+            {
+                job.Dismissed = true;
+                changed++;
+            }
+
+            if (changed > 0)
+            {
+                await SaveAsync(jobs, now).ConfigureAwait(false);
+            }
+
+            return changed;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     /// <summary>
     /// Records that videos moved to another folder (a merge). Their Jellyfin items are
     /// replaced by new ones at the new place, so delivered jobs go back to Finished and

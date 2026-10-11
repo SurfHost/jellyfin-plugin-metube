@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using System.Text.RegularExpressions;
 using MediaBrowser.Controller.Library;
@@ -28,6 +30,10 @@ public sealed partial class LibraryIndex : IDisposable
     private DateTimeOffset _builtAt = DateTimeOffset.MinValue;
     private volatile bool _dirty = true;
 
+    // Videos whose Jellyfin item was removed (deleted in Jellyfin, or gone from disk),
+    // for the download watcher to settle their jobs.
+    private readonly ConcurrentQueue<string> _removed = new();
+
     /// <summary>Initializes a new instance of the <see cref="LibraryIndex"/> class.</summary>
     public LibraryIndex(ILibraryManager libraryManager, LibraryLocator locator, ILogger<LibraryIndex> logger)
     {
@@ -35,7 +41,7 @@ public sealed partial class LibraryIndex : IDisposable
         _locator = locator;
         _logger = logger;
         _libraryManager.ItemAdded += OnLibraryChanged;
-        _libraryManager.ItemRemoved += OnLibraryChanged;
+        _libraryManager.ItemRemoved += OnItemRemoved;
     }
 
     /// <summary>Extracts the video id from a file name ending in "[id].ext".</summary>
@@ -102,14 +108,33 @@ public sealed partial class LibraryIndex : IDisposable
         }
     }
 
+    /// <summary>Gets how many videos the library folder holds.</summary>
+    public int Count => Snapshot().Count;
+
     /// <summary>Marks the index stale so the next lookup rebuilds it.</summary>
     public void Invalidate() => _dirty = true;
+
+    /// <summary>
+    /// Returns (and forgets) the video ids whose Jellyfin item was removed since the last
+    /// call. The caller still has to check the disk: a merge or a rescan also removes
+    /// items whose file is fine.
+    /// </summary>
+    public IReadOnlyList<string> DrainRemovedVideoIds()
+    {
+        var result = new List<string>();
+        while (_removed.TryDequeue(out var videoId))
+        {
+            result.Add(videoId);
+        }
+
+        return result.Distinct(StringComparer.Ordinal).ToList();
+    }
 
     /// <inheritdoc />
     public void Dispose()
     {
         _libraryManager.ItemAdded -= OnLibraryChanged;
-        _libraryManager.ItemRemoved -= OnLibraryChanged;
+        _libraryManager.ItemRemoved -= OnItemRemoved;
     }
 
     private Dictionary<string, string> Snapshot()
@@ -162,6 +187,27 @@ public sealed partial class LibraryIndex : IDisposable
         }
 
         return result;
+    }
+
+    private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
+    {
+        OnLibraryChanged(sender, e);
+        try
+        {
+            var path = e?.Item?.Path;
+            var root = _builtFor;
+            if (path is not null
+                && (root is null || path.StartsWith(root, StringComparison.Ordinal))
+                && VideoIdFromFileName(Path.GetFileName(path)) is { } videoId
+                && _removed.Count < 10000)
+            {
+                _removed.Enqueue(videoId);
+            }
+        }
+        catch (Exception)
+        {
+            // Never let an exception escape into Jellyfin's own scan.
+        }
     }
 
     private void OnLibraryChanged(object? sender, ItemChangeEventArgs e)

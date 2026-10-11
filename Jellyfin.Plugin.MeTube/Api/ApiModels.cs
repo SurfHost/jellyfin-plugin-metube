@@ -73,6 +73,9 @@ public sealed class JobDto
     /// <summary>Gets or sets a value indicating whether the caller may delete this video.</summary>
     public bool CanDelete { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the caller may remove this entry from the list.</summary>
+    public bool CanDismiss { get; set; }
+
     /// <summary>
     /// Builds the DTO. <paramref name="itemGone"/> reports an InLibrary job whose item was
     /// deleted from Jellyfin since, as the extra state "Removed", so the client offers
@@ -167,6 +170,23 @@ public sealed class AddRequestDto
     public string? Url { get; set; }
 }
 
+/// <summary>Body of a request to remove entries from the "Added videos" list.</summary>
+public sealed class DismissRequestDto
+{
+    /// <summary>Gets or sets the jobs to remove from the list.</summary>
+    public List<Guid>? JobIds { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether to remove every entry the caller may remove.</summary>
+    public bool All { get; set; }
+}
+
+/// <summary>Answer to a Dismiss request.</summary>
+public sealed class DismissResponseDto
+{
+    /// <summary>Gets or sets how many entries were removed from the list.</summary>
+    public int Count { get; set; }
+}
+
 /// <summary>Body of a Delete request.</summary>
 public sealed class DeleteRequestDto
 {
@@ -248,6 +268,12 @@ public sealed class FolderDto
 
     /// <summary>Gets or sets the item id of one of its videos, for a thumbnail.</summary>
     public Guid? SampleItemId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the folder's own Jellyfin item id, so the client can tell which of the
+    /// items selected in Jellyfin's library view are channel folders. Null until scanned.
+    /// </summary>
+    public Guid? ItemId { get; set; }
 }
 
 /// <summary>A merged channel folder: what MeTube puts in Source goes into Target.</summary>

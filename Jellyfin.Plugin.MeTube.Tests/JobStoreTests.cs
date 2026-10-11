@@ -195,6 +195,24 @@ public sealed class JobStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task DismissHidesClosedJobsButKeepsTheRecord()
+    {
+        var store = NewStore();
+        var failed = new JobRecord { Id = Guid.NewGuid(), VideoId = "aaaaaaaaaaa", State = JobState.Failed, CreatedUtc = Now, UpdatedUtc = Now };
+        var open = new JobRecord { Id = Guid.NewGuid(), VideoId = "bbbbbbbbbbb", State = JobState.Queued, CreatedUtc = Now, UpdatedUtc = Now };
+        Assert.Equal(ReserveOutcome.Created, (await store.ReserveAsync(failed, 0, true, Now)).Outcome);
+        Assert.Equal(ReserveOutcome.Created, (await store.ReserveAsync(open, 0, true, Now)).Outcome);
+        await store.UpdateAsync(failed.Id, j => j.State = JobState.Failed, Now);
+
+        Assert.Equal(1, await store.DismissAsync(new[] { failed.Id, open.Id }, Now));
+        Assert.Equal(0, await store.DismissAsync(new[] { failed.Id }, Now));
+
+        var jobs = await NewStore().ListAsync();
+        Assert.True(jobs.Single(j => j.Id == failed.Id).Dismissed);
+        Assert.False(jobs.Single(j => j.Id == open.Id).Dismissed);
+    }
+
+    [Fact]
     public async Task StartsEmptyWhenTheFileIsCorrupt()
     {
         Directory.CreateDirectory(_dir);

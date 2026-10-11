@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -95,9 +96,11 @@ public sealed class DownloadWatcher : BackgroundService
     /// <summary>One pass over all jobs. Internal so tests and diagnostics can call it.</summary>
     internal async Task PollOnceAsync(CancellationToken cancellationToken)
     {
-        var all = await _store.ListAsync(cancellationToken).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
         var location = _locator.Resolve();
+        await ForgetRemovedAsync(_libraryIndex.DrainRemovedVideoIds(), location, now, cancellationToken).ConfigureAwait(false);
+
+        var all = await _store.ListAsync(cancellationToken).ConfigureAwait(false);
 
         if (now - _lastClosedCheck >= ClosedCheckInterval)
         {
@@ -161,6 +164,8 @@ public sealed class DownloadWatcher : BackgroundService
         {
             return;
         }
+
+        await ReconcileDeliveredAsync(location, cancellationToken).ConfigureAwait(false);
 
         if (await IsMeTubeIdleAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -383,6 +388,84 @@ public sealed class DownloadWatcher : BackgroundService
                     },
                     now,
                     cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Settles the jobs of videos whose Jellyfin item was just removed: when the file is
+    /// gone too (deleted in Jellyfin's own menu, or on disk), the video is no longer in
+    /// the library and its jobs become Deleted, which drops them from "Added videos".
+    /// A file that is still there (a merge, a rescan) keeps its jobs.
+    /// </summary>
+    private async Task ForgetRemovedAsync(IReadOnlyList<string> videoIds, LibraryLocation? location, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (videoIds.Count == 0 || location is null || !Directory.Exists(location.Path))
+        {
+            return;
+        }
+
+        _libraryIndex.Invalidate();
+        if (_libraryIndex.Count == 0)
+        {
+            return; // An empty folder is more likely a share that is not readable right now.
+        }
+
+        foreach (var videoId in videoIds)
+        {
+            if (!_libraryIndex.TryFindFile(videoId, out _))
+            {
+                await _store.MarkDeletedAsync(videoId, now, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Backstop for <see cref="ForgetRemovedAsync"/> (and for videos removed before this
+    /// version): delivered jobs whose file is no longer in the library become Deleted,
+    /// and an InLibrary job whose item was replaced (a rescan, a merge) gets the new item.
+    /// </summary>
+    private async Task ReconcileDeliveredAsync(LibraryLocation location, CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(location.Path))
+        {
+            return; // An unmounted pool is not a deleted library.
+        }
+
+        var delivered = (await _store.ListAsync(cancellationToken).ConfigureAwait(false))
+            .Where(j => j.State is JobState.InLibrary or JobState.Downloaded)
+            .ToList();
+        if (delivered.Count == 0)
+        {
+            return;
+        }
+
+        _libraryIndex.Invalidate();
+        var groups = delivered.GroupBy(j => j.VideoId, StringComparer.Ordinal).ToList();
+        var missing = groups.Count(g => !_libraryIndex.TryFindFile(g.Key, out _));
+        if (missing > 0 && (_libraryIndex.Count == 0 || (missing > 3 && missing * 2 > groups.Count)))
+        {
+            // Most of the library missing at once looks like a share that is not readable
+            // right now, not like deletions; those are caught one by one as they happen.
+            _logger.LogWarning("MeTube: {Missing} of {Total} added videos are not in the library folder right now; leaving their jobs alone.", missing, groups.Count);
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var group in groups)
+        {
+            if (!_libraryIndex.TryFindFile(group.Key, out var path))
+            {
+                await _store.MarkDeletedAsync(group.Key, now, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            foreach (var job in group.Where(j => j.State == JobState.InLibrary && (j.ItemId is not { } id || !_libraryIndex.ItemExists(id))))
+            {
+                if (_libraryIndex.ResolveItemId(job.VideoId, path) is { } itemId)
+                {
+                    await _store.UpdateAsync(job.Id, j => j.ItemId = itemId, now, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
     }

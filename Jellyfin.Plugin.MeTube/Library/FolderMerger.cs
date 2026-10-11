@@ -7,8 +7,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.MeTube.Library;
 
-/// <summary>A channel folder in the library, as the Folders tab lists it.</summary>
-public sealed record ChannelFolder(string Name, int VideoCount, Guid? SampleItemId);
+/// <summary>
+/// A channel folder in the library, as the Folders tab lists it. <paramref name="ItemId"/>
+/// is the folder's own Jellyfin item, which is what Jellyfin's selection menu knows it by.
+/// </summary>
+public sealed record ChannelFolder(string Name, int VideoCount, Guid? SampleItemId, Guid? ItemId);
 
 /// <summary>A video file that moved to another folder.</summary>
 public sealed record MovedVideo(string VideoId, string RelativePath);
@@ -87,14 +90,14 @@ public sealed class FolderMerger
             Guid? sample = null;
             foreach (var video in videos.Take(3))
             {
-                sample = FindItemId(video.FullName);
+                sample = FindItemId(video.FullName, isFolder: false);
                 if (sample is not null)
                 {
                     break;
                 }
             }
 
-            result.Add(new ChannelFolder(name, videos.Count, sample));
+            result.Add(new ChannelFolder(name, videos.Count, sample, FindItemId(directory, isFolder: true)));
         }
 
         return result.OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
@@ -375,11 +378,11 @@ public sealed class FolderMerger
         }
     }
 
-    private Guid? FindItemId(string path)
+    private Guid? FindItemId(string path, bool isFolder)
     {
         try
         {
-            return _libraryManager.FindByPath(path, false)?.Id;
+            return _libraryManager.FindByPath(path, isFolder)?.Id;
         }
         catch (Exception ex)
         {
