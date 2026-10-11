@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/SurfHost/jellyfin-plugin-metube/main/logo.png",
     "versions": [
       {
+        "version": "0.3.1",
+        "changelog": "A logo for the plugin, shown in Jellyfin's plugin catalog and on the installed plugins page.",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/SurfHost/jellyfin-plugin-metube/releases/download/v0.3.1/metube_0.3.1.zip",
+        "checksum": "0c1dedb840c6d07bf959697014347bbb",
+        "timestamp": "2026-10-11T23:23:57Z"
+      },
+      {
         "version": "0.3.0",
         "changelog": "Merge folders from Jellyfin's own library view: select two or more YouTube channel folders (long-press or right-click a folder), open the \"...\" menu and choose \"Merge folders\". The YouTube page's Folders tab opens with those folders selected; pick the folder to keep and confirm. Administrators only. \"Newest first\" is now the default sort for search results. It orders the results loaded so far; choose Relevance for YouTube's own order. \"Added videos\" cleans itself up: videos deleted from the library (with the plugin's Delete, in Jellyfin's own menu, or on disk) disappear from the list. Failed or lost downloads get a remove button, and \"Clean up list\" removes them all at once. The entries are only hidden: failed adds still count toward the daily limit. Fixed: on a phone, the rows in \"Added videos\" were squeezed so narrow that the title disappeared; the buttons now move to a line of their own.",
         "targetAbi": "12.2.0.0",
