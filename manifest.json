@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/SurfHost/jellyfin-plugin-metube/main/logo.png",
     "versions": [
       {
+        "version": "0.3.2",
+        "changelog": "Fixed: the plugin's logo disappeared from Jellyfin's plugin pages after a restart. The running plugin reported its version with four parts (0.3.1.0) while Jellyfin looks the image up by the three-part version from meta.json (0.3.1).",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/SurfHost/jellyfin-plugin-metube/releases/download/v0.3.2/metube_0.3.2.zip",
+        "checksum": "2ef6fded7a379c4fa3b5969d82a2f6a2",
+        "timestamp": "2026-10-11T23:59:44Z"
+      },
+      {
         "version": "0.3.1",
         "changelog": "A logo for the plugin, shown in Jellyfin's plugin catalog and on the installed plugins page.",
         "targetAbi": "12.2.0.0",
