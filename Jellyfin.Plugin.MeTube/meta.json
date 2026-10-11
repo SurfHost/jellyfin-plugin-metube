@@ -1,0 +1,12 @@
+{
+  "guid": "d152b2a6-c648-4b8e-acfd-4a262eb10a4d",
+  "name": "MeTube",
+  "version": "0.1.0",
+  "targetAbi": "12.2.0.0",
+  "framework": "net10.0",
+  "owner": "SurfHost",
+  "overview": "Search YouTube inside Jellyfin and add videos to your library through MeTube.",
+  "description": "Adds a YouTube entry to the Jellyfin menu for the users you choose. Search YouTube, press Add, and your MeTube server downloads the video straight into a Jellyfin library, where it shows up with its title, thumbnail, description and date for offline viewing. MeTube stays on your LAN; Jellyfin's own login protects every request.",
+  "category": "General",
+  "timestamp": "2026-10-11T12:00:00.0000000Z"
+}

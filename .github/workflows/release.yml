@@ -1,0 +1,203 @@
+name: Release
+
+# Builds the plugin, publishes (or updates) the GitHub release for the version in
+# meta.json, and keeps manifest.json in step with the built zip's checksum.
+#
+# meta.json is the single source of truth for the version and the target ABI. Every
+# step is idempotent: re-running it for a version that already has a release replaces
+# that release's asset and refreshes the checksum instead of failing.
+#
+# To cut a release: bump the version in the csproj (Version, AssemblyVersion,
+# FileVersion), meta.json and metube.js, add a CHANGELOG.md section, commit to main,
+# then push a tag vX.Y.Z (or run this workflow by hand).
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  META: Jellyfin.Plugin.MeTube/meta.json
+  CSPROJ: Jellyfin.Plugin.MeTube/Jellyfin.Plugin.MeTube.csproj
+
+jobs:
+  # Everything that names a version has to agree before anything is built. The
+  # release job builds main, not the tagged commit, so a tag whose files disagree
+  # would publish main's code under the tag's name.
+  version-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Verify the tag, meta.json, the csproj, metube.js and manifest.json agree
+        id: check
+        run: |
+          set -euo pipefail
+
+          META_VERSION=$(jq -r '.version' "$META")
+          if ! printf '%s' "$META_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "meta.json version must be MAJOR.MINOR.PATCH, got '$META_VERSION'." >&2
+            exit 1
+          fi
+
+          fail=0
+          for prop in Version AssemblyVersion FileVersion; do
+            value=$(sed -n "s:.*<${prop}>\(.*\)</${prop}>.*:\1:p" "$CSPROJ" | head -1)
+            if [ "$value" != "$META_VERSION" ]; then
+              echo "$CSPROJ <$prop> is '$value' but meta.json says '$META_VERSION'." >&2
+              fail=1
+            fi
+          done
+
+          if ! grep -q "var VERSION = '$META_VERSION';" Jellyfin.Plugin.MeTube/Web/metube.js; then
+            echo "metube.js VERSION does not match meta.json ('$META_VERSION')." >&2
+            fail=1
+          fi
+
+          # A drifted guid would make Jellyfin treat the release as a different plugin.
+          META_GUID=$(jq -r '.guid' "$META")
+          MANIFEST_GUID=$(jq -r '.[0].guid' manifest.json)
+          if [ "$META_GUID" != "$MANIFEST_GUID" ]; then
+            echo "manifest.json guid '$MANIFEST_GUID' does not match meta.json guid '$META_GUID'." >&2
+            fail=1
+          fi
+
+          EXPECTED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${META_VERSION}/metube_${META_VERSION}.zip"
+          ENTRY_URL=$(jq -r --arg v "$META_VERSION" '(.[0].versions[] | select(.version==$v) | .sourceUrl) // ""' manifest.json)
+          if [ -n "$ENTRY_URL" ] && [ "$ENTRY_URL" != "$EXPECTED_URL" ]; then
+            echo "manifest.json entry for $META_VERSION points at '$ENTRY_URL', expected '$EXPECTED_URL'." >&2
+            fail=1
+          fi
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+            if [ "$TAG" != "v$META_VERSION" ]; then
+              echo "Tag '$TAG' does not match meta.json ('$META_VERSION'). Expected 'v$META_VERSION'." >&2
+              fail=1
+            fi
+
+            git fetch --no-tags origin main
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" "$(git rev-parse FETCH_HEAD)"; then
+              echo "Tag '$TAG' is not an ancestor of main, but the release is built from main." >&2
+              fail=1
+            fi
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            echo "Refusing to release: version metadata disagrees." >&2
+            exit 1
+          fi
+
+          echo "version=$META_VERSION" >> "$GITHUB_OUTPUT"
+          echo "All version metadata agrees on $META_VERSION."
+
+  release:
+    needs: version-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Read the version and target ABI from meta.json
+        id: v
+        run: |
+          VERSION=$(jq -r '.version' "$META")
+          ABI=$(jq -r '.targetAbi' "$META")
+          FRAMEWORK=$(jq -r '.framework' "$META")
+          GATED="${{ needs.version-gate.outputs.version }}"
+          if [ -n "$GATED" ] && [ "$GATED" != "$VERSION" ]; then
+            echo "main is at version '$VERSION' but the verified trigger is for '$GATED'. Tag the current main instead." >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "abi=$ABI" >> "$GITHUB_OUTPUT"
+          echo "framework=$FRAMEWORK" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: dotnet test Jellyfin.Plugin.MeTube.Tests/Jellyfin.Plugin.MeTube.Tests.csproj -c Release
+
+      - name: Build
+        run: |
+          dotnet publish "$CSPROJ" \
+            -c Release -f ${{ steps.v.outputs.framework }} --no-self-contained -o publish \
+            -p:Version=${{ steps.v.outputs.version }} \
+            -p:AssemblyVersion=${{ steps.v.outputs.version }} \
+            -p:FileVersion=${{ steps.v.outputs.version }}
+
+      - name: Package
+        id: pkg
+        run: |
+          VERSION="${{ steps.v.outputs.version }}"
+          jq --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S.0000000Z)" '.timestamp = $ts' "$META" > meta.json
+          # -j flattens paths: Jellyfin extracts the zip verbatim into
+          # <plugins>/<name>_<version>/ and a nested folder would break it.
+          zip -j "metube_$VERSION.zip" publish/Jellyfin.Plugin.MeTube.dll meta.json
+
+          # Exactly these two files. A private copy of a Jellyfin or framework
+          # assembly would give the startup filter and controllers a second type
+          # identity in the plugin load context.
+          FILES=$(unzip -Z1 "metube_$VERSION.zip" | sort | tr '\n' ' ')
+          if [ "$FILES" != "Jellyfin.Plugin.MeTube.dll meta.json " ]; then
+            echo "Unexpected package contents: $FILES" >&2
+            exit 1
+          fi
+
+          echo "md5=$(md5sum "metube_$VERSION.zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.v.outputs.version }}"
+          TAG="v$VERSION"
+          NOTES=$(awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {found=1; next} found && /^## \[/ {exit} found {print}' CHANGELOG.md)
+          if [ -z "$NOTES" ]; then NOTES="See CHANGELOG.md."; fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "metube_$VERSION.zip" --clobber
+          else
+            gh release create "$TAG" "metube_$VERSION.zip" --target main --title "$TAG" --notes "$NOTES" --latest
+          fi
+
+      - name: Sync manifest.json to the built checksum
+        run: |
+          VERSION="${{ steps.v.outputs.version }}"
+          ABI="${{ steps.v.outputs.abi }}"
+          MD5="${{ steps.pkg.outputs.md5 }}"
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/metube_${VERSION}.zip"
+          TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # The changelog Jellyfin shows in its catalog: this version's CHANGELOG.md
+          # section as one paragraph, or what the manifest already had.
+          CL=$(awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {found=1; next} found && /^## \[/ {exit} found && NF {sub(/^[-*] /, ""); printf "%s ", $0}' CHANGELOG.md | sed 's/ *$//')
+          if [ -z "$CL" ]; then
+            CL="$(jq -r --arg v "$VERSION" '(.[0].versions[] | select(.version==$v) | .changelog) // "See the GitHub release notes."' manifest.json)"
+          fi
+          jq --arg v "$VERSION" --arg sum "$MD5" --arg url "$URL" --arg ts "$TS" --arg cl "$CL" --arg abi "$ABI" \
+            '.[0].versions |= ([{version:$v, changelog:$cl, targetAbi:$abi, sourceUrl:$url, checksum:$sum, timestamp:$ts}] + map(select(.version != $v)))' \
+            manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo "manifest.json already up to date."
+          else
+            git config user.name 'SurfHost'
+            git config user.email 'SurfHost@users.noreply.github.com'
+            git commit -m "Sync manifest.json for v${VERSION} [skip ci]"
+            git push origin HEAD:main
+          fi

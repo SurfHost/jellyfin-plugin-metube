@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>MeTube</title>
+</head>
+<body>
+<div id="MeTubeConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <style>
+        #MeTubeConfigPage .mt-section { margin-bottom: 2em; }
+        #MeTubeConfigPage .mt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0 1.5em; }
+        #MeTubeConfigPage .mt-users label { display: block; margin: .35em 0; }
+        #MeTubeConfigPage .mt-test div { margin: .3em 0; }
+        #MeTubeConfigPage .mt-ok { color: #4caf50; }
+        #MeTubeConfigPage .mt-bad { color: #ff8a80; }
+        #MeTubeConfigPage .mt-buttons { display: flex; gap: 1em; flex-wrap: wrap; margin-top: 1em; }
+        #MeTubeConfigPage code { background: rgba(127,127,127,.2); padding: 0 .3em; border-radius: 3px; }
+    </style>
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="MeTubeConfigForm">
+                <div class="mt-section">
+                    <div class="sectionTitleContainer flex align-items-center">
+                        <h2 class="sectionTitle">MeTube</h2>
+                    </div>
+                    <p class="fieldDescription">
+                        Search YouTube from Jellyfin and download videos with your MeTube server straight into a Jellyfin library.
+                        MeTube has no login of its own: keep it on your LAN. Only the users ticked below (and administrators) can search and add.
+                    </p>
+                    <div class="mt-buttons">
+                        <button is="emby-button" type="button" id="MtTest" class="raised button-alt"><span>Test connection</span></button>
+                        <button is="emby-button" type="button" id="MtOpen" class="raised button-alt"><span>Open YouTube search</span></button>
+                    </div>
+                    <div id="MtTestResult" class="mt-test fieldDescription"></div>
+                </div>
+
+                <div class="mt-section">
+                    <h3 class="sectionTitle">MeTube server</h3>
+                    <div class="mt-grid">
+                        <div class="inputContainer">
+                            <input is="emby-input" type="url" id="MeTubeUrl" label="MeTube URL" placeholder="http://192.168.1.10:8081" />
+                            <div class="fieldDescription">As reachable from the Jellyfin server, on the LAN.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="Folder" label="MeTube download folder" />
+                            <div class="fieldDescription">Folder inside MeTube's download directory that is mounted as the Jellyfin library, e.g. <code>youtube</code>.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="Presets" label="MeTube presets" />
+                            <div class="fieldDescription">Comma-separated YTDL_OPTIONS_PRESETS names applied to every download, e.g. <code>jellyfin</code>.</div>
+                        </div>
+                        <div class="selectContainer">
+                            <select is="emby-select" id="Quality" label="Quality">
+                                <option value="best">Best</option>
+                                <option value="2160">2160p</option>
+                                <option value="1440">1440p</option>
+                                <option value="1080">1080p</option>
+                                <option value="720">720p</option>
+                                <option value="480">480p</option>
+                                <option value="360">360p</option>
+                            </select>
+                        </div>
+                        <div class="selectContainer">
+                            <select is="emby-select" id="Format" label="Format">
+                                <option value="any">Auto (best quality, often MKV)</option>
+                                <option value="mp4">MP4</option>
+                                <option value="ios">iOS compatible</option>
+                            </select>
+                        </div>
+                        <div class="selectContainer">
+                            <select is="emby-select" id="Codec" label="Video codec">
+                                <option value="auto">Auto</option>
+                                <option value="h264">H.264</option>
+                                <option value="h265">H.265 (HEVC)</option>
+                                <option value="av1">AV1</option>
+                                <option value="vp9">VP9</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-section">
+                    <h3 class="sectionTitle">Jellyfin library</h3>
+                    <div class="selectContainer">
+                        <select is="emby-select" id="LibraryId" label="Library that shows MeTube's folder"></select>
+                        <div class="fieldDescription">Used to spot videos that are already there, to scan new downloads right away, and to open them with Play.</div>
+                    </div>
+                </div>
+
+                <div class="mt-section">
+                    <h3 class="sectionTitle">Who may add videos</h3>
+                    <div id="MtUsers" class="mt-users"></div>
+                    <div class="mt-grid">
+                        <div class="inputContainer">
+                            <input is="emby-input" type="number" id="MaxDurationMinutes" min="0" step="1" label="Longest video, in minutes (0 = no limit)" />
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="number" id="DailyLimitPerUser" min="0" step="1" label="Videos per user per 24 hours (0 = no limit)" />
+                        </div>
+                    </div>
+                    <div class="fieldDescription">Limits apply to non-admin users. Live streams and premieres can never be added.</div>
+                </div>
+
+                <div class="mt-section">
+                    <h3 class="sectionTitle">Menu entry and search</h3>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="InjectionEnabled" />
+                            <span>Inject the YouTube menu entry</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Adds YouTube to the side menu and header for allowed users. Untick if a Jellyfin update ever breaks the page; "Open YouTube search" above keeps working.
+                        </div>
+                    </div>
+                    <div class="mt-grid">
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="SearchRegion" maxlength="2" label="Search region (e.g. NL, empty = automatic)" />
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="SearchLanguage" maxlength="10" label="Search result language (e.g. en)" />
+                        </div>
+                        <div class="inputContainer">
+                            <input is="emby-input" type="text" id="InnerTubeClientVersion" label="YouTube web client version (advanced)" />
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = 'd152b2a6-c648-4b8e-acfd-4a262eb10a4d';
+            var page = document.querySelector('#MeTubeConfigPage');
+
+            function norm(id) {
+                return String(id || '').replace(/-/g, '').toLowerCase();
+            }
+
+            function esc(text) {
+                var div = document.createElement('div');
+                div.textContent = text == null ? '' : String(text);
+                return div.innerHTML;
+            }
+
+            function value(id) {
+                return page.querySelector('#' + id).value;
+            }
+
+            function setValue(id, val) {
+                page.querySelector('#' + id).value = val == null ? '' : val;
+            }
+
+            function loadLibraries(cfg) {
+                return ApiClient.getVirtualFolders().then(function (folders) {
+                    var select = page.querySelector('#LibraryId');
+                    var html = '<option value="">(choose a library)</option>';
+                    (folders || []).forEach(function (folder) {
+                        var path = (folder.Locations || []).join(', ');
+                        html += '<option value="' + esc(folder.ItemId) + '">' + esc(folder.Name + (path ? ' (' + path + ')' : '')) + '</option>';
+                    });
+                    select.innerHTML = html;
+                    var wanted = norm(cfg.LibraryId);
+                    Array.prototype.forEach.call(select.options, function (option) {
+                        if (wanted && norm(option.value) === wanted) {
+                            select.value = option.value;
+                        }
+                    });
+                });
+            }
+
+            function loadUsers(cfg) {
+                return ApiClient.getUsers().then(function (users) {
+                    var allowed = (cfg.AllowedUserIds || []).map(norm);
+                    var html = '';
+                    (users || []).forEach(function (user) {
+                        var isAdmin = user.Policy && user.Policy.IsAdministrator;
+                        var checked = isAdmin || allowed.indexOf(norm(user.Id)) >= 0;
+                        html += '<label><input is="emby-checkbox" type="checkbox" class="mt-user" data-user-id="' + esc(user.Id) + '"'
+                            + (checked ? ' checked' : '') + (isAdmin ? ' disabled' : '') + ' /><span>'
+                            + esc(user.Name) + (isAdmin ? ' (administrator, always allowed)' : '') + '</span></label>';
+                    });
+                    page.querySelector('#MtUsers').innerHTML = html;
+                });
+            }
+
+            function loadConfig() {
+                Dashboard.showLoadingMsg();
+                return ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
+                    setValue('MeTubeUrl', cfg.MeTubeUrl);
+                    setValue('Folder', cfg.Folder);
+                    setValue('Presets', (cfg.Presets || []).join(', '));
+                    setValue('Quality', cfg.Quality || 'best');
+                    setValue('Format', cfg.Format || 'any');
+                    setValue('Codec', cfg.Codec || 'auto');
+                    setValue('MaxDurationMinutes', cfg.MaxDurationMinutes);
+                    setValue('DailyLimitPerUser', cfg.DailyLimitPerUser);
+                    setValue('SearchRegion', cfg.SearchRegion);
+                    setValue('SearchLanguage', cfg.SearchLanguage);
+                    setValue('InnerTubeClientVersion', cfg.InnerTubeClientVersion);
+                    page.querySelector('#InjectionEnabled').checked = cfg.InjectionEnabled !== false;
+                    return Promise.all([loadLibraries(cfg), loadUsers(cfg)]);
+                }).finally(function () {
+                    Dashboard.hideLoadingMsg();
+                });
+            }
+
+            function toInt(id, fallback) {
+                var n = parseInt(value(id), 10);
+                return isNaN(n) || n < 0 ? fallback : n;
+            }
+
+            function save(event) {
+                event.preventDefault();
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (cfg) {
+                    cfg.MeTubeUrl = value('MeTubeUrl').trim();
+                    cfg.Folder = value('Folder').trim().replace(/^\/+|\/+$/g, '');
+                    cfg.Presets = value('Presets').split(',').map(function (p) { return p.trim(); }).filter(function (p) { return p.length > 0; });
+                    cfg.Quality = value('Quality');
+                    cfg.Format = value('Format');
+                    cfg.Codec = value('Codec');
+                    cfg.LibraryId = value('LibraryId');
+                    cfg.MaxDurationMinutes = toInt('MaxDurationMinutes', 240);
+                    cfg.DailyLimitPerUser = toInt('DailyLimitPerUser', 25);
+                    cfg.SearchRegion = value('SearchRegion').trim().toUpperCase();
+                    cfg.SearchLanguage = value('SearchLanguage').trim() || 'en';
+                    cfg.InnerTubeClientVersion = value('InnerTubeClientVersion').trim();
+                    cfg.InjectionEnabled = page.querySelector('#InjectionEnabled').checked;
+                    cfg.AllowedUserIds = Array.prototype.filter.call(page.querySelectorAll('.mt-user'), function (box) {
+                        return box.checked && !box.disabled;
+                    }).map(function (box) { return box.getAttribute('data-user-id'); });
+                    return ApiClient.updatePluginConfiguration(pluginId, cfg).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                }).finally(function () {
+                    Dashboard.hideLoadingMsg();
+                });
+                return false;
+            }
+
+            function line(ok, label, detail) {
+                return '<div class="' + (ok ? 'mt-ok' : 'mt-bad') + '">' + (ok ? '✔ ' : '✘ ') + esc(label) + (detail ? ': ' + esc(detail) : '') + '</div>';
+            }
+
+            function test() {
+                var target = page.querySelector('#MtTestResult');
+                target.textContent = 'Testing… (save your changes first)';
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('MeTube/Admin/Test'), dataType: 'json' }).then(function (r) {
+                    var html = line(r.MeTubeOk, 'MeTube', r.MeTubeDetail);
+                    if (r.MeTubeOk) {
+                        html += line(!r.MissingPresets || r.MissingPresets.length === 0, 'Presets',
+                            r.MissingPresets && r.MissingPresets.length ? 'MeTube does not know ' + r.MissingPresets.join(', ') + ' (known: ' + ((r.MeTubePresets || []).join(', ') || 'none') + ')' : 'all known to MeTube');
+                    }
+                    html += line(r.SearchOk, 'YouTube search', r.SearchDetail);
+                    html += line(r.LibraryOk, 'Library', r.LibraryDetail);
+                    html += line(r.InjectionOk, 'Menu entry', r.InjectionDetail);
+                    (r.AccessWarnings || []).forEach(function (w) { html += line(false, 'Access', w); });
+                    target.innerHTML = html;
+                }, function () {
+                    target.innerHTML = line(false, 'Test', 'the request failed. Is the plugin loaded? Check the server log.');
+                });
+            }
+
+            function openSearch() {
+                if (window.MeTubeForJellyfin) {
+                    window.MeTubeForJellyfin.open();
+                    return;
+                }
+                var script = document.createElement('script');
+                script.src = ApiClient.getUrl('MeTube/ClientScript');
+                script.onload = function () {
+                    if (window.MeTubeForJellyfin) {
+                        window.MeTubeForJellyfin.open();
+                    }
+                };
+                document.head.appendChild(script);
+            }
+
+            page.addEventListener('pageshow', function () {
+                loadConfig();
+            });
+            page.querySelector('#MeTubeConfigForm').addEventListener('submit', save);
+            page.querySelector('#MtTest').addEventListener('click', test);
+            page.querySelector('#MtOpen').addEventListener('click', openSearch);
+        })();
+    </script>
+</div>
+</body>
+</html>

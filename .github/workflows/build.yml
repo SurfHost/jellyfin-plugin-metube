@@ -1,0 +1,62 @@
+name: Build
+
+# Compile, test and format checks for every push and pull request. Release.yml only
+# runs on tags, so without this nothing would verify that main builds.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT: Jellyfin.Plugin.MeTube/Jellyfin.Plugin.MeTube.csproj
+  TESTS: Jellyfin.Plugin.MeTube.Tests/Jellyfin.Plugin.MeTube.Tests.csproj
+  # NuGet.config in the repo root clears the source list and pins nuget.org.
+  NUGET_CONFIG: NuGet.config
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: |
+          dotnet restore "$PROJECT" --configfile "$NUGET_CONFIG"
+          dotnet restore "$TESTS" --configfile "$NUGET_CONFIG"
+
+      - name: Build
+        run: dotnet build "$PROJECT" -c Release --no-restore
+
+      - name: Test
+        run: dotnet test "$TESTS" -c Release --no-restore
+
+      - name: Verify formatting
+        # Run "dotnet format <project>" locally to fix.
+        run: |
+          dotnet format "$PROJECT" --verify-no-changes --no-restore
+          dotnet format "$TESTS" --verify-no-changes --no-restore
+
+      - name: Check dependencies for known vulnerabilities
+        # dotnet list package exits 0 whether or not it found anything, so grep the report.
+        run: |
+          REPORT="${RUNNER_TEMP:-.}/vulnerable.txt"
+          dotnet list "$PROJECT" package --vulnerable --include-transitive \
+            --configfile "$NUGET_CONFIG" > "$REPORT" 2>&1 || true
+          cat "$REPORT"
+          if grep -q 'has the following vulnerable packages' "$REPORT"; then
+            echo "::error::Vulnerable NuGet packages reported above." >&2
+            exit 1
+          fi
+          echo "No known-vulnerable packages reported."
