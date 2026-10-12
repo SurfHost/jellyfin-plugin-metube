@@ -23,7 +23,7 @@
         return;
     }
 
-    var VERSION = '0.3.2';
+    var VERSION = '0.3.3';
     var ROUTE_RE = /^#!?\/youtube(?:[\/?]|$)/i;
     var ENTRY_ATTR = 'data-metube-entry';
     var ICON = 'ondemand_video';

@@ -8,14 +8,24 @@ The plugin adds a **YouTube** entry to Jellyfin's menu (web client and the Jelly
 YouTube or paste a link, and your [MeTube](https://github.com/alexta69/metube) server downloads the video straight into a Jellyfin library.
 It shows up there with its title, thumbnail, description and date.
 
+## How it works
+
+```mermaid
+flowchart LR
+    A["Jellyfin app or browser<br/>YouTube page"] -- "1 · search, Add" --> B["Jellyfin server<br/>with this plugin"]
+    B -- "2 · download this video<br/>(local network only)" --> C["MeTube"]
+    C -- "3 · saves video<br/>and thumbnail" --> D[("YouTube library<br/>folder")]
+    B -- "4 · scans the library" --> D
+    B -. "5 · Play" .-> A
 ```
-Jellyfin (web / Android app) ── YouTube menu ── search · Add
-        │  the user's own Jellyfin login
-        ▼
-Jellyfin server + this plugin ──LAN──► MeTube ──► <library>/youtube/<Channel>/<Title> [<id>].mkv + .jpg
-        ▲                                                   │
-        └──────────── library scan, item ready ◄────────────┘
-```
+
+1. On the **YouTube** page in Jellyfin you search and press **Add**. That goes to your own Jellyfin server, under your own Jellyfin login.
+2. The plugin asks MeTube to download the video. Only the Jellyfin server talks to MeTube, over your local network, so MeTube never has to
+   be reachable from the internet.
+3. MeTube saves the video and its thumbnail in the folder of your YouTube library, one folder per channel:
+   `youtube/<Channel>/<Title> [<video id>].mkv`.
+4. The plugin has Jellyfin scan that library right away.
+5. The button on the card turns into **Play**. The video is now in Jellyfin like any other, so it also plays when the internet is down.
 
 ## Features
 

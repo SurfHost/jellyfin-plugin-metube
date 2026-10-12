@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.3] - 2026-10-12
+
+- README: the "how it works" text diagram is replaced by a drawn diagram with the steps written out. No code changes.
+
 ## [0.3.2] - 2026-10-12
 
 - Fixed: the plugin's logo disappeared from Jellyfin's plugin pages after a restart. The running plugin reported its version with four parts (0.3.1.0) while Jellyfin looks the image up by the three-part version from meta.json (0.3.1).
