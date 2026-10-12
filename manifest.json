@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/SurfHost/jellyfin-plugin-metube/main/logo.png",
     "versions": [
       {
+        "version": "0.3.4",
+        "changelog": "Fixed: the Add button on the YouTube page did nothing, and neither did Try again (broken since 0.2.0). A variable in the code that draws the buttons had the same name as the function that adds a video. A page test now clicks every button of the YouTube page in headless Chrome on each build, so a broken button is caught before release.",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/SurfHost/jellyfin-plugin-metube/releases/download/v0.3.4/metube_0.3.4.zip",
+        "checksum": "9e20a4db5599c3d74379f35098839ef5",
+        "timestamp": "2026-10-12T12:18:58Z"
+      },
+      {
         "version": "0.3.3",
         "changelog": "Logo: a larger name and a tagline that is readable on Jellyfin's plugin cards. README: the \"how it works\" text diagram is replaced by a drawn diagram with the steps written out.",
         "targetAbi": "12.2.0.0",
