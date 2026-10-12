@@ -13,7 +13,7 @@
   <rect width="1920" height="1080" fill="url(#bg)"/>
 
   <!-- Emblem: a video (play) that drops into your own library (download tray). -->
-  <g transform="translate(556 540) scale(1.55)">
+  <g transform="translate(408 540) scale(1.6250)">
     <rect x="-160" y="-160" width="320" height="320" rx="84" fill="url(#jf)"/>
     <g fill="#fff" stroke="#fff" stroke-linejoin="round" stroke-linecap="round" transform="translate(0 -3)">
       <!-- Play triangle. -->
@@ -26,6 +26,8 @@
     </g>
   </g>
 
-  <text x="940" y="532" font-family="Segoe UI, sans-serif" font-weight="700" font-size="176" fill="#ffffff" letter-spacing="-2">MeTube</text>
-  <text x="946" y="626" font-family="Segoe UI, sans-serif" font-weight="400" font-size="52" fill="#a9b6d6">Search YouTube, save to Jellyfin</text>
+  <!-- Plugin name. -->
+  <text x="756" y="489" font-family="Segoe UI, sans-serif" font-weight="700" font-size="200" fill="#ffffff" letter-spacing="-1">MeTube</text>
+  <!-- Tagline, two lines, sized to stay readable on Jellyfin's small plugin cards. -->
+  <text font-family="Segoe UI, sans-serif" font-weight="600" font-size="100" fill="#d6def5"><tspan x="760" y="615">Search YouTube,</tspan><tspan x="760" y="731">save to Jellyfin</tspan></text>
 </svg>

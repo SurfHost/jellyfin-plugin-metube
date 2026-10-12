@@ -2,7 +2,8 @@
 
 ## [0.3.3] - 2026-10-12
 
-- README: the "how it works" text diagram is replaced by a drawn diagram with the steps written out. No code changes.
+- Logo: a larger name and a tagline that is readable on Jellyfin's plugin cards.
+- README: the "how it works" text diagram is replaced by a drawn diagram with the steps written out.
 
 ## [0.3.2] - 2026-10-12
 
