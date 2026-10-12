@@ -1,0 +1,225 @@
+<!doctype html>
+<!--
+  End-to-end test of the injected client script (Web/metube.js) against a stand-in
+  for jellyfin-web 12.2: its router fallback page, Emby.Page, Dashboard.confirm,
+  ApiClient, a mocked /MeTube API, and the library's multi-select bar and action
+  sheet. run_page_test.py opens it in headless Chrome and checks the result.
+  It clicks every button a user can: Add (ok and refused), Delete, Try again,
+  Remove from list, Clean up list, Merge folders, and Jellyfin's selection menu.
+-->
+<html lang="en" class="layout-desktop"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>MeTube page test</title>
+<style>
+:root{--jf-palette-primary-main:#00a4dc;--jf-palette-background-paper:#202020;--jf-palette-text-secondary:rgba(255,255,255,.7);--jf-palette-error-main:#f44336}
+html{background:#101010;color:rgba(255,255,255,.7)} body{margin:0;font-family:sans-serif}
+.hide{display:none!important}
+header{position:fixed;top:0;left:0;right:0;height:48px;display:flex;align-items:center;z-index:1100;background:#202020}
+main{position:relative;margin-top:48px}
+.mainAnimatedPage{position:absolute;top:0;left:0;right:0;bottom:0}
+.padded-left{padding-left:3.3%}.padded-right{padding-right:3.3%}
+</style></head><body>
+<div id="reactRoot">
+  <header class="MuiAppBar-root"><div class="MuiToolbar-root" style="display:flex;flex-grow:1">
+    <a href="#/home">Jellyfin</a>&nbsp;<a id="favLink" href="#/home?tab=1">Favorites</a>&nbsp;<a id="moviesLink" href="#/movies">Films</a>
+    <div class="MuiBox-root" style="display:flex;flex-grow:1;justify-content:flex-end"><a class="MuiIconButton-root css-abc" href="#/search" aria-label="Search">S</a></div>
+  </div></header>
+  <main><div class="mainAnimatedPages skinBody"><div id="homePage" class="page mainAnimatedPage">HOME PAGE CONTENT</div></div><div class="skinBody" id="reactOutlet"></div></main>
+</div>
+<script>
+window.calls = [];
+window.routerLog = [];
+// Minimal stand-in for jellyfin-web's router: unknown routes render #fallbackPage.
+function renderRoute() {
+  var path = location.hash.replace(/^#/, '').split('?')[0];
+  var outlet = document.getElementById('reactOutlet');
+  outlet.innerHTML = '';
+  document.getElementById('homePage').classList.toggle('hide', path !== '/home');
+  if (path !== '/home' && path !== '/details') {
+    outlet.innerHTML = '<div id="fallbackPage" class="page mainAnimatedPage libraryPage"><h1>Page not found</h1></div>';
+    var fb = document.getElementById('fallbackPage');
+    fb.dispatchEvent(new CustomEvent('viewshow', { bubbles: true }));
+  }
+  if (path === '/details') { outlet.innerHTML = '<div id="detailsPage" class="page">DETAILS ' + location.hash + '</div>'; }
+  routerLog.push(location.hash);
+}
+window.addEventListener('hashchange', renderRoute);
+window.Emby = { Page: { show: function (p) { location.hash = '#' + p; }, back: function () { history.back(); } } };
+window.Dashboard = { confirm: function (opts, title, cb) { window.lastConfirm = opts; setTimeout(function () { cb(window.confirmAnswer !== false); }, 10); } };
+window.mock = {
+  me: { Allowed: true, IsAdmin: true, CanPlay: true, Configured: true, InjectionEnabled: true },
+  jobs: [
+    { Id: 'j1', VideoId: 'vvvvvvvvvv1', Title: 'Everybody (Backstreets Back) (Official HD Video)', Channel: 'BackstreetBoysVEVO', State: 'Failed', Error: 'Download error', CanDismiss: true, ThumbnailUrl: 'x', UserName: 'Hans', CreatedUtc: '2026-10-11T21:00:44Z' },
+    { Id: 'j2', VideoId: 'vvvvvvvvvv2', Title: 'I Want It That Way', Channel: 'BackstreetBoysVEVO', State: 'Missing', CanDismiss: true, ThumbnailUrl: 'x', UserName: 'Hans', CreatedUtc: '2026-10-11T21:00:43Z' },
+    { Id: 'j3', VideoId: 'vvvvvvvvvv3', Title: 'BANKZITTERS VERDUBBELEN HUN GELD', Channel: 'Bankzitters', State: 'InLibrary', ItemId: 'item-z', CanDelete: true, CanDismiss: false, ThumbnailUrl: 'x', UserName: 'Hans', CreatedUtc: '2026-10-11T20:27:38Z' }
+  ], other: [],
+  searchItems: [
+    { VideoId: 'aaaaaaaaaaa', Title: 'Medium video', DurationSeconds: 600, DurationText: '10:00', AgeSeconds: 3600, ViewCount: 50, ThumbnailUrl: 'x', Availability: 'Addable' },
+    { VideoId: 'bbbbbbbbbbb', Title: 'Short video', DurationSeconds: 60, DurationText: '1:00', AgeSeconds: 86400 * 30, ViewCount: 500, ThumbnailUrl: 'x', Availability: 'Addable' },
+    { VideoId: 'ccccccccccc', Title: 'Long video', DurationSeconds: 7200, DurationText: '2:00:00', AgeSeconds: 60, ViewCount: 5, ThumbnailUrl: 'x', Availability: 'InLibrary', ItemId: 'item-c', CanDelete: true },
+    { VideoId: 'ddddddddddd', Title: 'Live thing', ThumbnailUrl: 'x', Availability: 'NotAddable', Reason: 'Live' },
+    { VideoId: 'eeeeeeeeeee', Title: 'Someone elses', DurationSeconds: 100, ThumbnailUrl: 'x', Availability: 'InLibrary', ItemId: 'item-e', CanDelete: false }
+  ],
+  deleteStatus: 204,
+  folders: [
+    { Name: 'Backstreet Boys', VideoCount: 2, SampleItemId: 'item-a', ItemId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1' },
+    { Name: 'BackstreetBoysVEVO', VideoCount: 5, SampleItemId: 'item-b', ItemId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2' },
+    { Name: 'Backstreet Boys - Topic', VideoCount: 1, SampleItemId: null, ItemId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3' },
+    { Name: 'jawed', VideoCount: 1, SampleItemId: 'item-j', ItemId: null }
+  ],
+  aliases: [{ Source: 'Old Channel', Target: 'jawed' }]
+};
+window.ApiClient = {
+  getUrl: function (p, q) { var s = '/api/' + p; if (q) { s += '?' + Object.keys(q).map(function (k) { return k + '=' + encodeURIComponent(q[k]); }).join('&'); } return s; },
+  accessToken: function () { return 'tok'; },
+  getCurrentUserId: function () { return 'user-1'; },
+  serverId: function () { return 'srv1'; }
+};
+window.fetch = function (url, opts) {
+  var method = (opts && opts.method) || 'GET';
+  var body = opts && opts.body ? JSON.parse(opts.body) : null;
+  calls.push({ method: method, url: url, body: body });
+  var res = { status: 200, body: null };
+  if (url.indexOf('/api/MeTube/Me') === 0) res.body = mock.me;
+  else if (url.indexOf('/api/MeTube/Search') === 0) res.body = { Items: JSON.parse(JSON.stringify(mock.searchItems)), Continuation: 'tok_1', Source: 'youtube' };
+  else if (url.indexOf('/api/MeTube/Add') === 0) {
+    if (mock.addFails) res = { status: 400, body: { Error: 'MeTube refused it' } };
+    else { var nj = { Id: 'n-' + body.VideoId, VideoId: body.VideoId, Title: 'Added ' + body.VideoId, State: 'Queued', ThumbnailUrl: 'x', CreatedUtc: '2026-10-12T10:00:00Z' }; mock.jobs.unshift(nj); res.body = { Job: nj }; }
+  }
+  else if (url.indexOf('/api/MeTube/Delete') === 0) res = { status: mock.deleteStatus, body: mock.deleteStatus === 204 ? null : { Error: 'Jellyfin is not allowed to delete files' } };
+  else if (url.indexOf('/api/MeTube/Status?videoIds=') === 0) res.body = mock.other;
+  else if (url.indexOf('/api/MeTube/Status') === 0) res.body = mock.jobs;
+  else if (url.indexOf('/api/MeTube/Jobs/Dismiss') === 0) {
+    var before = mock.jobs.length;
+    mock.jobs = mock.jobs.filter(function (j) { return !(j.CanDismiss && (body.All || (body.JobIds || []).indexOf(j.Id) >= 0)); });
+    res.body = { Count: before - mock.jobs.length };
+  }
+  else if (url.indexOf('/api/MeTube/Admin/Folders') === 0) res.body = { Folders: JSON.parse(JSON.stringify(mock.folders)), Aliases: JSON.parse(JSON.stringify(mock.aliases)) };
+  else if (url.indexOf('/api/MeTube/Admin/Merge') === 0) {
+    var moved = 0, kept = null;
+    mock.folders = mock.folders.filter(function (f) {
+      if (f.Name === body.Target) { kept = f; return true; }
+      if (body.Folders.indexOf(f.Name) >= 0) { moved += f.VideoCount; return false; }
+      return true;
+    });
+    kept.VideoCount += moved;
+    body.Folders.forEach(function (n) { if (n !== body.Target) mock.aliases.push({ Source: n, Target: body.Target }); });
+    res.body = { MovedVideos: moved, MovedFiles: moved * 2, Skipped: mock.mergeSkip || [], RemovedFolders: body.Folders.filter(function (n) { return n !== body.Target; }) };
+  }
+  else if (url.indexOf('/api/MeTube/Admin/Aliases/Remove') === 0) { mock.aliases = mock.aliases.filter(function (a) { return a.Source !== body.Source; }); res.status = 204; }
+  return Promise.resolve(new Response(res.body === null ? null : JSON.stringify(res.body), { status: res.status }));
+};
+if (!location.hash) { location.hash = '#/home'; } else { renderRoute(); }
+</script>
+
+<script>
+// Stand-ins for Jellyfin's library cards, multi-select bar and action sheet (12.2 DOM).
+window.libraryCards = function () {
+  var home = document.getElementById('homePage');
+  home.innerHTML = '<div class="itemsContainer">' +
+    ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1:Backstreet Boys:true', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2:BackstreetBoysVEVO:true', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3:Topic:true', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1:A video:false', 'ccccccccccccccccccccccccccccccc1:Not youtube:true']
+      .map(function (x) { var p = x.split(':'); return '<div class="card" data-id="' + p[0] + '" data-isfolder="' + p[2] + '" data-type="' + (p[2] === 'true' ? 'Folder' : 'Video') + '"><div class="cardBox">' + p[1] + '</div></div>'; }).join('') + '</div>';
+};
+window.startSelect = function (ids) {
+  var cards = document.querySelectorAll('.card');
+  for (var i = 0; i < cards.length; i++) {
+    var p = document.createElement('div'); p.className = 'itemSelectionPanel';
+    p.innerHTML = '<label class="checkboxContainer"><input type="checkbox" class="chkItemSelect"' + (ids.indexOf(cards[i].getAttribute('data-id')) >= 0 ? ' checked' : '') + '/><span></span></label>';
+    cards[i].querySelector('.cardBox').appendChild(p);
+  }
+  var panel = document.createElement('div'); panel.className = 'selectionCommandsPanel';
+  panel.innerHTML = '<button class="btnCloseSelectionPanel">x</button><h1 class="itemSelectionCount">' + ids.length + '</h1><button class="btnSelectionPanelOptions">...</button>';
+  document.body.appendChild(panel);
+  panel.querySelector('.btnCloseSelectionPanel').addEventListener('click', function () {
+    panel.parentNode.removeChild(panel);
+    var e = document.querySelectorAll('.itemSelectionPanel'); for (var j = 0; j < e.length; j++) e[j].parentNode.removeChild(e[j]);
+    window.selectionClosed = (window.selectionClosed || 0) + 1;
+  });
+};
+window.openSheet = function () {
+  return new Promise(function (resolve) {
+    setTimeout(function () {
+      var items = [['selectall', 'Alles selecteren', 'select_all'], ['addtocollection', 'Toevoegen aan collectie', 'add'], ['playlist', 'Toevoegen aan afspeellijst', 'playlist_add'], ['delete', 'Verwijderen', 'delete'], ['markplayed', 'Markeren als afgespeeld', 'check_box'], ['markunplayed', 'Markeren als niet afgespeeld', 'check_box_outline_blank'], ['refresh', 'Metadata vernieuwen', 'refresh']];
+      var c = document.createElement('div'); c.className = 'dialogContainer';
+      var dlg = document.createElement('div'); dlg.className = 'focuscontainer dialog actionsheet-not-fullscreen actionSheet centeredDialog opened';
+      dlg.innerHTML = '<div class="actionSheetContent"><div class="actionSheetScroller scrollY">' + items.map(function (it) {
+        return '<button is="emby-button" type="button" class="listItem listItem-button actionSheetMenuItem emby-button" data-id="' + it[0] + '"><span class="actionsheetMenuItemIcon listItemIcon listItemIcon-transparent material-icons ' + it[2] + '" aria-hidden="true"></span><div class="listItemBody actionsheetListItemBody"><div class="listItemBodyText actionSheetItemText">' + it[1] + '</div></div></button>';
+      }).join('') + '</div></div>';
+      c.appendChild(dlg); document.body.appendChild(c);
+      dlg.style.position = 'fixed'; dlg.style.margin = '0'; dlg.style.left = '100px'; dlg.style.top = (window.innerHeight - dlg.offsetHeight - 20) + 'px';
+      history.pushState({ usr: { dialogs: ['d1'] } }, '', location.href);
+      var selectedId = null;
+      dlg.addEventListener('click', function (e) {
+        var b = e.target.closest('.actionSheetMenuItem'); if (!b) return;
+        selectedId = b.getAttribute('data-id');
+        c.parentNode.removeChild(c);
+        var onPop = function () { window.removeEventListener('popstate', onPop); dlg.dispatchEvent(new CustomEvent('close')); window.sheetResult = selectedId; resolve(selectedId); };
+        window.addEventListener('popstate', onPop);
+        history.back();
+      });
+      window.sheet = dlg;
+    }, 100);
+  });
+};
+</script>
+<script src="../../Jellyfin.Plugin.MeTube/Web/metube.js"></script>
+<script>
+window.__errors = [];
+window.addEventListener('error', function (e) { __errors.push(String(e.message) + ' @' + e.lineno); });
+window.addEventListener('unhandledrejection', function (e) { __errors.push('rejection: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason)); });
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+function q(sel) { return document.querySelector(sel); }
+function actionsOf(id) { var a = q('#mtjPage .mtj-card[data-video-id="' + id + '"] .mtj-actions'); return a ? a.textContent : 'missing'; }
+function count(part) { return calls.filter(function (c) { return c.url.indexOf(part) >= 0; }).length; }
+(async function () {
+  var r = {};
+  await wait(300);
+  location.hash = '#/youtube?q=cats&order=none';
+  await wait(1500);
+  r.defaultOrderNone = [].map.call(document.querySelectorAll('#mtjPage .mtj-card .mtj-name'), function (n) { return n.textContent; }).join(' | ');
+  // 1. Add
+  q('#mtjPage .mtj-card[data-video-id="aaaaaaaaaaa"] .mtj-actions button').click();
+  r.add_busy = actionsOf('aaaaaaaaaaa');
+  await wait(800);
+  r.add_after = actionsOf('aaaaaaaaaaa'); r.add_calls = count('/MeTube/Add');
+  // 2. Add that fails
+  mock.addFails = true;
+  q('#mtjPage .mtj-card[data-video-id="bbbbbbbbbbb"] .mtj-actions button').click();
+  await wait(800);
+  r.addFail_after = actionsOf('bbbbbbbbbbb');
+  mock.addFails = false;
+  // 3. Delete with confirmation
+  window.confirmAnswer = true;
+  q('#mtjPage .mtj-card[data-video-id="ccccccccccc"] .mtj-danger').click();
+  await wait(800);
+  r.delete_calls = count('/MeTube/Delete'); r.delete_after = actionsOf('ccccccccccc');
+  // 4. Added videos: retry, dismiss one, clean up
+  q('#mtjPage .mtj-tab[data-tab="added"]').click();
+  await wait(800);
+  r.added_rows = [].map.call(document.querySelectorAll('#mtjPage [data-role=list] .mtj-row'), function (x) { return x.textContent.replace(/\s+/g, ' ').slice(0, 70); });
+  var retry = [].filter.call(document.querySelectorAll('#mtjPage [data-role=list] .mtj-row button'), function (b) { return /Opnieuw|Try again/.test(b.textContent); })[0];
+  r.retry_found = !!retry; var before = count('/MeTube/Add'); if (retry) retry.click(); await wait(800); r.retry_add_calls = count('/MeTube/Add') - before;
+  var x = q('#mtjPage [data-role=list] .mtj-row .mtj-icon'); r.dismiss_found = !!x; if (x) x.click(); await wait(800); r.dismiss_calls = count('/Jobs/Dismiss');
+  var clean = q('#mtjPage [data-role=added-bar] button'); r.clean_found = !!clean; if (clean) clean.click(); await wait(800); r.dismiss_calls_after_clean = count('/Jobs/Dismiss');
+  // 5. Folders tab: select two, merge
+  q('#mtjPage .mtj-tab[data-tab="folders"]').click();
+  await wait(800);
+  var checks = function () { return document.querySelectorAll('#mtjPage .mtj-check'); };
+  checks()[0].click(); await wait(50); checks()[1].click(); await wait(50);
+  q('#mtjPage [data-role=folders-bar] button').click(); await wait(100);
+  r.merge_box = !!q('#mtjPage .mtj-merge');
+  q('#mtjPage .mtj-merge .mtj-actions button').click(); await wait(900);
+  r.merge_calls = count('/Admin/Merge'); r.merge_msg = (q('#mtjPage [data-role=folders-msg]') || {}).textContent;
+  // 6. Jellyfin's selection menu in the library
+  history.back(); await wait(300);
+  location.hash = '#/home'; await wait(600);
+  libraryCards(); startSelect(['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3']); await wait(400);
+  var p = openSheet(); await wait(500);
+  var item = sheet.querySelector('[data-id="mtj-merge"]'); r.sheet_item = item ? item.textContent : 'missing';
+  if (item) { item.click(); await p; await wait(1500); }
+  r.sheet_hash = location.hash; r.sheet_tab = (q('#mtjPage .mtj-tab.mtj-active') || {}).textContent;
+  r.sheet_radios = [].map.call(document.querySelectorAll('#mtjPage .mtj-merge input[type=radio]'), function (x) { return x.value; });
+  r.errors = __errors;
+  var pre = document.createElement('pre'); pre.id = 'result'; pre.textContent = JSON.stringify(r, null, 1); document.body.appendChild(pre);
+})().catch(function (e) { var pre = document.createElement('pre'); pre.id = 'result'; pre.textContent = 'RUNNER FAILED ' + e.stack + ' errors=' + JSON.stringify(__errors); document.body.appendChild(pre); });
+</script>
+
+</body></html>

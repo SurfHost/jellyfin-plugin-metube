@@ -23,7 +23,7 @@
         return;
     }
 
-    var VERSION = '0.3.3';
+    var VERSION = '0.3.4';
     var ROUTE_RE = /^#!?\/youtube(?:[\/?]|$)/i;
     var ENTRY_ATTR = 'data-metube-entry';
     var ICON = 'ondemand_video';
@@ -1307,9 +1307,9 @@
     function signature(item) {
         var videoId = pick(item, 'VideoId');
         var view = decide(item);
-        var add = state.addState[videoId] || {};
+        var pending = state.addState[videoId] || {};
         var job = view.job;
-        return [view.kind, view.itemId || '', view.note || '', view.canDelete ? 1 : 0, job ? pick(job, 'State') : '', job ? Math.round(pick(job, 'Percent') || 0) : '', add.busy || '', add.error || ''].join('|');
+        return [view.kind, view.itemId || '', view.note || '', view.canDelete ? 1 : 0, job ? pick(job, 'State') : '', job ? Math.round(pick(job, 'Percent') || 0) : '', pending.busy || '', pending.error || ''].join('|');
     }
 
     function renderCardActions(card, item) {
@@ -1331,14 +1331,16 @@
 
     function fillActions(actions, item) {
         var videoId = pick(item, 'VideoId');
-        var add = state.addState[videoId] || {};
-        if (add.busy) {
-            actions.appendChild(disabledButton(add.busy === 'delete' ? t('deleting') : t('adding')));
+        // Never give a local variable a function's name here: a local "add" once hid
+        // the add function from the Add button's click handler, so the button did nothing.
+        var pending = state.addState[videoId] || {};
+        if (pending.busy) {
+            actions.appendChild(disabledButton(pending.busy === 'delete' ? t('deleting') : t('adding')));
             return;
         }
         var view = decide(item);
-        var note = add.error || view.note;
-        var noteIsError = add.error ? true : view.noteIsError;
+        var note = pending.error || view.note;
+        var noteIsError = pending.error ? true : view.noteIsError;
         var title = pick(item, 'Title') || pick(view.job, 'Title') || videoId;
 
         if (view.kind === 'play') {
@@ -1359,9 +1361,9 @@
             actions.appendChild(disabledButton(t('inLibrary')));
         } else if (view.kind === 'blocked') {
             actions.appendChild(disabledButton(view.note));
-            note = add.error || null;
+            note = pending.error || null;
         } else {
-            actions.appendChild(el('button', { type: 'button', className: 'mtj-btn', text: view.kind === 'retry' ? t('retry') : t('add'), onclick: function () { add(videoId); } }));
+            actions.appendChild(el('button', { type: 'button', className: 'mtj-btn', text: view.kind === 'retry' ? t('retry') : t('add'), onclick: function () { addVideo(videoId); } }));
         }
 
         if (view.canDelete && (view.kind === 'play' || view.kind === 'inlibrary' || view.kind === 'downloaded')) {
@@ -1408,7 +1410,7 @@
         }
     }
 
-    function add(videoId) {
+    function addVideo(videoId) {
         if (state.addState[videoId] && state.addState[videoId].busy) {
             return;
         }

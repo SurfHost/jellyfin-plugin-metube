@@ -42,6 +42,11 @@ jobs:
       - name: Test
         run: dotnet test "$TESTS" -c Release --no-restore
 
+      # Clicks every button of the YouTube page in headless Chrome against a mocked
+      # API; the .NET tests cannot see a broken click handler in Web/metube.js.
+      - name: Page test
+        run: python3 Jellyfin.Plugin.MeTube.Tests/Web/run_page_test.py
+
       - name: Verify formatting
         # Run "dotnet format <project>" locally to fix.
         run: |

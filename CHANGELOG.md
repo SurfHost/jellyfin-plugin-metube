@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.4] - 2026-10-12
+
+- Fixed: the Add button on the YouTube page did nothing, and neither did Try again (broken since 0.2.0). A variable in the code that draws the buttons had the same name as the function that adds a video.
+- A page test now clicks every button of the YouTube page in headless Chrome on each build, so a broken button is caught before release.
+
 ## [0.3.3] - 2026-10-12
 
 - Logo: a larger name and a tagline that is readable on Jellyfin's plugin cards.
