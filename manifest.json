@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/SurfHost/jellyfin-plugin-metube/main/logo.png",
     "versions": [
       {
+        "version": "0.3.5",
+        "changelog": "The YouTube menu entry has its own icon (a play button on a screen). It used the icon Jellyfin gives libraries with mixed content, so such a library looked like the YouTube entry. The YouTube library gets the same icon in Jellyfin's header, side menu, \"More\" menu and home screen buttons. Jellyfin picks icons by content type and showed a photo, the icon for Home Videos libraries. Other libraries keep their icons.",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/SurfHost/jellyfin-plugin-metube/releases/download/v0.3.5/metube_0.3.5.zip",
+        "checksum": "3af16e59402c0888fd93f16f93a182a2",
+        "timestamp": "2026-10-13T20:14:38Z"
+      },
+      {
         "version": "0.3.4",
         "changelog": "Fixed: the Add button on the YouTube page did nothing, and neither did Try again (broken since 0.2.0). A variable in the code that draws the buttons had the same name as the function that adds a video. A page test now clicks every button of the YouTube page in headless Chrome on each build, so a broken button is caught before release.",
         "targetAbi": "12.2.0.0",
