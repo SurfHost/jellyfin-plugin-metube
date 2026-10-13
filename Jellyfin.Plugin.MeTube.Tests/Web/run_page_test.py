@@ -52,10 +52,19 @@ def run_page(chrome):
     return json.loads(text)
 
 
+GLYPH = '"\uf06a"'  # smart_display in Jellyfin's icon font, as getComputedStyle quotes it
+
+
 def main():
     r = run_page(find_chrome())
     checks = [
         ("no script errors", r.get("errors") == [], r.get("errors")),
+        ("the YouTube library link loses Jellyfin's photo icon", r.get("lib_svg_hidden") is True, r.get("lib_svg_hidden")),
+        ("the YouTube library link shows the YouTube icon", r.get("lib_before") == GLYPH, r.get("lib_before")),
+        ("the YouTube library button on the home screen too", r.get("home_before") == GLYPH, r.get("home_before")),
+        ("other libraries keep their own icon", r.get("radio_svg_display") != "none" and r.get("radio_before") in ("none", "normal"),
+         (r.get("radio_svg_display"), r.get("radio_before"))),
+        ("the YouTube menu entry uses the YouTube icon", bool(r.get("entry_icons")) and set(r.get("entry_icons")) == {"smart_display"}, r.get("entry_icons")),
         ("Add shows Adding... at once", r.get("add_busy") == "Adding…", r.get("add_busy")),
         ("Add sends one request", r.get("add_calls") == 1, r.get("add_calls")),
         ("Add ends as Queued", r.get("add_after") == "Queued", r.get("add_after")),

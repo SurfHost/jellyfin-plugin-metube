@@ -82,6 +82,9 @@ Jellyfin Web's `index.html` while it is served:
 - It works with read-only containers such as TrueNAS apps.
 - It coexists with other plugins that inject scripts.
 
+The script also gives the YouTube library's own links (header, side menu, home screen) the YouTube icon instead of the photo icon
+Jellyfin uses for Home Videos libraries. That is CSS only, aimed at links to that one library.
+
 If a future Jellyfin release breaks the entry, untick **Inject the YouTube menu entry** in the settings. Admins can still use
 **Open YouTube search** there.
 

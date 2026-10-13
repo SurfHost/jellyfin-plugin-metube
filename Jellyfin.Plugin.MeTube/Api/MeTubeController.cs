@@ -115,7 +115,10 @@ public sealed class MeTubeController : ControllerBase
             CanPlay = library is not null && _access.CanSeeLibrary(userId, library.Id),
             DailyLimit = config.DailyLimitPerUser,
             MaxDurationMinutes = config.MaxDurationMinutes,
-            InjectionEnabled = config.InjectionEnabled
+            InjectionEnabled = config.InjectionEnabled,
+
+            // Every signed-in user, allowed or not, sees the library in Jellyfin's menus.
+            LibraryId = _locator.Resolve()?.Id
         };
     }
 

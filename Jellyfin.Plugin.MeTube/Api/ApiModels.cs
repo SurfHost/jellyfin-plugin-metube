@@ -27,6 +27,12 @@ public sealed class MeDto
     public int MaxDurationMinutes { get; set; }
 
     /// <summary>
+    /// Gets or sets the item id of the YouTube library, so the client script can give that
+    /// library's menu links the YouTube icon. Null while no library is configured.
+    /// </summary>
+    public Guid? LibraryId { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether the menu entries should be shown. When an
     /// admin switches injection off, the script may still be loaded by the settings
     /// page's "Open YouTube search", and must then leave the menus alone.

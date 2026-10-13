@@ -20,7 +20,10 @@ main{position:relative;margin-top:48px}
 <div id="reactRoot">
   <header class="MuiAppBar-root"><div class="MuiToolbar-root" style="display:flex;flex-grow:1">
     <a href="#/home">Jellyfin</a>&nbsp;<a id="favLink" href="#/home?tab=1">Favorites</a>&nbsp;<a id="moviesLink" href="#/movies">Films</a>
-    <div class="MuiBox-root" style="display:flex;flex-grow:1;justify-content:flex-end"><a class="MuiIconButton-root css-abc" href="#/search" aria-label="Search">S</a></div>
+    <div class="MuiBox-root" style="display:flex;flex-grow:1;justify-content:flex-end"><a class="MuiIconButton-root css-abc" href="#/search" aria-label="Search">S</a>
+    <a id="ytLib" class="MuiButton-root" href="#/homevideos?topParentId=f00df00df00df00df00df00df00df00d"><span class="MuiButton-startIcon"><svg width="20" height="20"></svg></span>YouTube</a>
+    <a id="radioLib" class="MuiButton-root" href="#/mixed?topParentId=0123456789abcdef0123456789abcdef&amp;collectionType=mixed"><span class="MuiButton-startIcon"><svg width="20" height="20"></svg></span>Radio</a>
+    <a id="ytHome" class="raised homeLibraryButton" href="#/homevideos?topParentId=f00df00df00df00df00df00df00df00d"><span class="material-icons homeLibraryIcon photo"></span>YouTube</a></div>
   </div></header>
   <main><div class="mainAnimatedPages skinBody"><div id="homePage" class="page mainAnimatedPage">HOME PAGE CONTENT</div></div><div class="skinBody" id="reactOutlet"></div></main>
 </div>
@@ -45,7 +48,7 @@ window.addEventListener('hashchange', renderRoute);
 window.Emby = { Page: { show: function (p) { location.hash = '#' + p; }, back: function () { history.back(); } } };
 window.Dashboard = { confirm: function (opts, title, cb) { window.lastConfirm = opts; setTimeout(function () { cb(window.confirmAnswer !== false); }, 10); } };
 window.mock = {
-  me: { Allowed: true, IsAdmin: true, CanPlay: true, Configured: true, InjectionEnabled: true },
+  me: { Allowed: true, IsAdmin: true, CanPlay: true, Configured: true, InjectionEnabled: true, LibraryId: 'f00df00d-f00d-f00d-f00d-f00df00df00d' },
   jobs: [
     { Id: 'j1', VideoId: 'vvvvvvvvvv1', Title: 'Everybody (Backstreets Back) (Official HD Video)', Channel: 'BackstreetBoysVEVO', State: 'Failed', Error: 'Download error', CanDismiss: true, ThumbnailUrl: 'x', UserName: 'Hans', CreatedUtc: '2026-10-11T21:00:44Z' },
     { Id: 'j2', VideoId: 'vvvvvvvvvv2', Title: 'I Want It That Way', Channel: 'BackstreetBoysVEVO', State: 'Missing', CanDismiss: true, ThumbnailUrl: 'x', UserName: 'Hans', CreatedUtc: '2026-10-11T21:00:43Z' },
@@ -172,6 +175,13 @@ function count(part) { return calls.filter(function (c) { return c.url.indexOf(p
 (async function () {
   var r = {};
   await wait(300);
+  // The YouTube library's links get the YouTube icon; other libraries keep theirs.
+  r.lib_svg_hidden = getComputedStyle(q('#ytLib svg')).display === 'none';
+  r.lib_before = getComputedStyle(q('#ytLib .MuiButton-startIcon'), '::before').content;
+  r.radio_svg_display = getComputedStyle(q('#radioLib svg')).display;
+  r.radio_before = getComputedStyle(q('#radioLib .MuiButton-startIcon'), '::before').content;
+  r.home_before = getComputedStyle(q('#ytHome .homeLibraryIcon'), '::before').content;
+  r.entry_icons = [].map.call(document.querySelectorAll('[data-metube-entry] .material-icons'), function (n) { return n.textContent; });
   location.hash = '#/youtube?q=cats&order=none';
   await wait(1500);
   r.defaultOrderNone = [].map.call(document.querySelectorAll('#mtjPage .mtj-card .mtj-name'), function (n) { return n.textContent; }).join(' | ');

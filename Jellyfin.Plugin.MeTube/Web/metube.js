@@ -23,10 +23,14 @@
         return;
     }
 
-    var VERSION = '0.3.4';
+    var VERSION = '0.3.5';
     var ROUTE_RE = /^#!?\/youtube(?:[\/?]|$)/i;
     var ENTRY_ATTR = 'data-metube-entry';
-    var ICON = 'ondemand_video';
+    // Material "smart_display": Jellyfin itself uses ondemand_video for mixed-content
+    // libraries, so the YouTube entry must not. ICON_CODE is the same glyph's code point
+    // in Jellyfin's icon font, for the CSS that gives the YouTube library this icon too.
+    var ICON = 'smart_display';
+    var ICON_CODE = '\\f06a';
     var POLL_ACTIVE_MS = 4000;
     var POLL_IDLE_MS = 20000;
     var OPEN_STATES = { Queued: true, Downloading: true, Finished: true };
@@ -675,6 +679,7 @@
             return;
         }
         checkSelectionMenu();
+        applyLibraryIcon();
         // Admins can switch the menu entries off; the page itself keeps working.
         if (!allowed() || pick(state.me, 'InjectionEnabled') === false) {
             removeEntries();
@@ -685,6 +690,44 @@
         injectModernHeader();
         injectLegacy();
         markEntries();
+    }
+
+    // Jellyfin picks a library's icon from its content type, so the YouTube library
+    // (Home Videos) gets a photo. CSS only, for the links to that library: the header,
+    // the side menu, the "More" menu and the home screen's library buttons. Jellyfin's
+    // own elements are hidden or decorated, never replaced, so React keeps working.
+    var libraryIconFor = null;
+
+    function applyLibraryIcon() {
+        var id = state.me ? String(pick(state.me, 'LibraryId') || '').replace(/-/g, '').toLowerCase() : '';
+        if (!/^[0-9a-f]{32}$/.test(id)) {
+            id = '';
+        }
+        if (id === libraryIconFor) {
+            return;
+        }
+        libraryIconFor = id;
+        var node = document.getElementById('mtj-libicon');
+        if (!id) {
+            if (node) {
+                node.parentNode.removeChild(node);
+            }
+            return;
+        }
+        var link = 'a[href*="topParentId=' + id + '"]';
+        var glyph = 'content:"' + ICON_CODE + '";font-family:"Material Icons";font-weight:normal;font-style:normal;line-height:1;letter-spacing:normal;' +
+            'text-transform:none;white-space:nowrap;display:inline-block;-webkit-font-smoothing:antialiased;';
+        var css = [
+            link + ' .MuiButton-startIcon>svg,' + link + ' .MuiListItemIcon-root>svg{display:none !important;}',
+            link + ' .MuiButton-startIcon::before{' + glyph + 'font-size:20px;}',
+            link + ' .MuiListItemIcon-root::before{' + glyph + 'font-size:24px;}',
+            link + ' .navMenuOptionIcon::before,' + link + ' .homeLibraryIcon::before{content:"' + ICON_CODE + '" !important;}'
+        ].join('\n');
+        if (!node) {
+            node = el('style', { id: 'mtj-libicon' });
+            (document.head || document.documentElement).appendChild(node);
+        }
+        node.textContent = css;
     }
 
     // ---------------------------------------------------------------- styles

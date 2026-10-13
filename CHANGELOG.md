@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.5] - 2026-10-13
+
+- The YouTube menu entry has its own icon (a play button on a screen). It used the icon Jellyfin gives libraries with mixed content, so such a library looked like the YouTube entry.
+- The YouTube library gets the same icon in Jellyfin's header, side menu, "More" menu and home screen buttons. Jellyfin picks icons by content type and showed a photo, the icon for Home Videos libraries. Other libraries keep their icons.
+
 ## [0.3.4] - 2026-10-12
 
 - Fixed: the Add button on the YouTube page did nothing, and neither did Try again (broken since 0.2.0). A variable in the code that draws the buttons had the same name as the function that adds a video.
