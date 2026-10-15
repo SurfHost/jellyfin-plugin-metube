@@ -35,8 +35,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>Gets or sets the MeTube quality (best, 2160, 1440, 1080, 720, 480, 360, 240, worst).</summary>
     public string Quality { get; set; } = "best";
 
-    /// <summary>Gets or sets the MeTube video format (any, mp4, ios).</summary>
-    public string Format { get; set; } = "any";
+    /// <summary>
+    /// Gets or sets the MeTube video format (any, mp4, ios). "ios" (H.264 + AAC in MP4)
+    /// plays on every client and Chromecast without transcoding.
+    /// </summary>
+    public string Format { get; set; } = "ios";
 
     /// <summary>Gets or sets the MeTube video codec preference (auto, h264, h265, av1, vp9).</summary>
     public string Codec { get; set; } = "auto";

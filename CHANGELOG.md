@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.4.0] - 2026-10-15
+
+- New installs download in the iOS compatible format by default (H.264 + AAC in MP4), which plays on Chromecast without transcoding. Existing installs keep their setting.
+
 ## [0.3.5] - 2026-10-13
 
 - The YouTube menu entry has its own icon (a play button on a screen). It used the icon Jellyfin gives libraries with mixed content, so such a library looked like the YouTube entry.

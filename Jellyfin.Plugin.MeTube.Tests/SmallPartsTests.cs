@@ -210,7 +210,7 @@ public class JobServiceOptionsTests
         Assert.Equal("youtube", options.Folder);
         Assert.Equal(new[] { "jellyfin" }, options.Presets);
         Assert.Equal("best", options.Quality);
-        Assert.Equal("any", options.Format);
+        Assert.Equal("ios", options.Format);
         Assert.Equal("auto", options.Codec);
     }
 }

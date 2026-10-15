@@ -6,9 +6,9 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>Jellyfin.Plugin.MeTube</RootNamespace>
     <AssemblyName>Jellyfin.Plugin.MeTube</AssemblyName>
-    <Version>0.3.5</Version>
-    <AssemblyVersion>0.3.5</AssemblyVersion>
-    <FileVersion>0.3.5</FileVersion>
+    <Version>0.4.0</Version>
+    <AssemblyVersion>0.4.0</AssemblyVersion>
+    <FileVersion>0.4.0</FileVersion>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <ImplicitUsings>disable</ImplicitUsings>
