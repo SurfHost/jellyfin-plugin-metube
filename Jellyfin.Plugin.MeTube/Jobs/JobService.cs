@@ -30,6 +30,7 @@ public sealed class JobService
     private readonly LibraryLocator _locator;
     private readonly LibraryRefresher _refresher;
     private readonly DownloadWatcher _watcher;
+    private readonly UserPreferenceStore _preferences;
     private readonly ILogger<JobService> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="JobService"/> class.</summary>
@@ -42,6 +43,7 @@ public sealed class JobService
         LibraryLocator locator,
         LibraryRefresher refresher,
         DownloadWatcher watcher,
+        UserPreferenceStore preferences,
         ILogger<JobService> logger)
     {
         _store = store;
@@ -52,6 +54,7 @@ public sealed class JobService
         _locator = locator;
         _refresher = refresher;
         _watcher = watcher;
+        _preferences = preferences;
         _logger = logger;
     }
 
@@ -154,7 +157,7 @@ public sealed class JobService
             }
         }
 
-        var options = CurrentOptions();
+        var options = DownloadFormats.Apply(CurrentOptions(), _preferences.GetFormat(userId));
         now = DateTimeOffset.UtcNow;
         var candidate = new JobRecord
         {

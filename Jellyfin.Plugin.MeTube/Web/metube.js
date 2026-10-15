@@ -23,7 +23,7 @@
         return;
     }
 
-    var VERSION = '0.4.0';
+    var VERSION = '0.5.0';
     var ROUTE_RE = /^#!?\/youtube(?:[\/?]|$)/i;
     var ENTRY_ATTR = 'data-metube-entry';
     // Material "smart_display": Jellyfin itself uses ondemand_video for mixed-content
@@ -115,6 +115,7 @@
             mergedChannels: 'Merged channels', stopRedirect: 'Stop redirecting',
             redirectNote: 'New downloads from the channel on the left go into the folder on the right.',
             mergeFolders: 'Merge folders',
+            downloadAs: 'Download as', formatDefault: 'Server default', formatCompatible: 'Chromecast compatible (up to 1080p)', formatBest: 'Best quality (4K)',
             dismiss: 'Remove from list', cleanList: 'Clean up list', cleaning: 'Cleaning up…',
             selectionGone: 'The folders selected in the library were not found. They may have been merged or removed already.',
             backToLibrary: 'Back to the library'
@@ -156,6 +157,7 @@
             mergedChannels: 'Samengevoegde kanalen', stopRedirect: 'Niet meer omleiden',
             redirectNote: 'Nieuwe downloads van het kanaal links komen in de map rechts.',
             mergeFolders: 'Mappen samenvoegen',
+            downloadAs: 'Downloaden als', formatDefault: 'Standaard van de server', formatCompatible: 'Chromecast-compatibel (tot 1080p)', formatBest: 'Beste kwaliteit (4K)',
             dismiss: 'Uit lijst verwijderen', cleanList: 'Lijst opschonen', cleaning: 'Opschonen…',
             selectionGone: 'De mappen die in de bibliotheek waren geselecteerd zijn niet gevonden. Misschien zijn ze al samengevoegd of verwijderd.',
             backToLibrary: 'Terug naar de bibliotheek'
@@ -1036,6 +1038,21 @@
         return el('label', null, [el('span', { text: label }), node]);
     }
 
+    // The format the next Add downloads in. Stored on the server per user, so it
+    // follows them to every device; the Add request itself stays the same.
+    function setDownloadFormat(value) {
+        var previous = pick(state.me, 'DownloadFormat') || 'default';
+        state.me.DownloadFormat = value;
+        request('POST', 'MeTube/Preferences', { DownloadFormat: value }).catch(function (error) {
+            state.me.DownloadFormat = previous;
+            var node = state.page && state.page.querySelector('select[data-filter="download"]');
+            if (node) {
+                node.value = previous;
+            }
+            setMessage('search-msg', error.message, true);
+        });
+    }
+
     // "Sort" mixes what YouTube can do (relevance, popularity: a new search) with what
     // only the page can do (newest, shortest, longest: reorder what is loaded).
     function buildFilters() {
@@ -1072,7 +1089,10 @@
             ], state.filters.date, function (value) {
                 state.filters.date = value;
                 rerunSearch();
-            })
+            }),
+            select('download', t('downloadAs'), [
+                ['default', t('formatDefault')], ['compatible', t('formatCompatible')], ['best', t('formatBest')]
+            ], pick(state.me, 'DownloadFormat') || 'default', setDownloadFormat)
         ]);
     }
 

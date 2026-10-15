@@ -47,6 +47,7 @@ public sealed class MeTubeController : ControllerBase
     private readonly FolderMerger _merger;
     private readonly FolderAliasStore _aliases;
     private readonly LibraryRefresher _refresher;
+    private readonly UserPreferenceStore _preferences;
 
     /// <summary>Initializes a new instance of the <see cref="MeTubeController"/> class.</summary>
     public MeTubeController(
@@ -62,7 +63,8 @@ public sealed class MeTubeController : ControllerBase
         VideoDeleter deleter,
         FolderMerger merger,
         FolderAliasStore aliases,
-        LibraryRefresher refresher)
+        LibraryRefresher refresher,
+        UserPreferenceStore preferences)
     {
         _search = search;
         _jobs = jobs;
@@ -77,6 +79,7 @@ public sealed class MeTubeController : ControllerBase
         _merger = merger;
         _aliases = aliases;
         _refresher = refresher;
+        _preferences = preferences;
     }
 
     /// <summary>Serves the client script that adds the YouTube menu entry.</summary>
@@ -116,10 +119,30 @@ public sealed class MeTubeController : ControllerBase
             DailyLimit = config.DailyLimitPerUser,
             MaxDurationMinutes = config.MaxDurationMinutes,
             InjectionEnabled = config.InjectionEnabled,
+            DownloadFormat = allowed ? _preferences.GetFormat(userId) : DownloadFormats.Default,
 
             // Every signed-in user, allowed or not, sees the library in Jellyfin's menus.
             LibraryId = _locator.Resolve()?.Id
         };
+    }
+
+    /// <summary>Stores the caller's download format (default, compatible or best).</summary>
+    [HttpPost("Preferences")]
+    public ActionResult SetPreferences([FromBody] PreferencesRequestDto request)
+    {
+        NoStore();
+        if (!TryGetCaller(out var userId, out _, out var denied))
+        {
+            return denied;
+        }
+
+        if (!DownloadFormats.IsKnown(request?.DownloadFormat))
+        {
+            return BadRequest(new ErrorDto { Error = "Unknown download format." });
+        }
+
+        _preferences.SetFormat(userId, request!.DownloadFormat);
+        return NoContent();
     }
 
     /// <summary>Searches YouTube.</summary>

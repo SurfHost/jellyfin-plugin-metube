@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.0] - 2026-10-15
+
+- Each user picks their download format on the YouTube page: Chromecast compatible (up to 1080p) or best quality (4K), or the server default. The choice is remembered per user.
+
 ## [0.4.0] - 2026-10-15
 
 - New installs download in the iOS compatible format by default (H.264 + AAC in MP4), which plays on Chromecast without transcoding. Existing installs keep their setting.

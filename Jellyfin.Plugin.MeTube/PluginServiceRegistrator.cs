@@ -56,6 +56,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<VideoDeleter>();
         serviceCollection.AddSingleton<LibraryMaintenance>();
         serviceCollection.AddSingleton<FolderAliasStore>();
+        serviceCollection.AddSingleton<UserPreferenceStore>();
         serviceCollection.AddSingleton<FolderMerger>();
         serviceCollection.AddSingleton<JobStore>();
         serviceCollection.AddSingleton<UserAccess>();

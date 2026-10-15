@@ -65,6 +65,8 @@ def main():
         ("other libraries keep their own icon", r.get("radio_svg_display") != "none" and r.get("radio_before") in ("none", "normal"),
          (r.get("radio_svg_display"), r.get("radio_before"))),
         ("the YouTube menu entry uses the YouTube icon", bool(r.get("entry_icons")) and set(r.get("entry_icons")) == {"smart_display"}, r.get("entry_icons")),
+        ("the download format shows the user's choice", r.get("format_initial") == "compatible", r.get("format_initial")),
+        ("changing the download format saves it", r.get("format_posts") == ["best"], r.get("format_posts")),
         ("Add shows Adding... at once", r.get("add_busy") == "Adding…", r.get("add_busy")),
         ("Add sends one request", r.get("add_calls") == 1, r.get("add_calls")),
         ("Add ends as Queued", r.get("add_after") == "Queued", r.get("add_after")),

@@ -26,6 +26,9 @@ public sealed class MeDto
     /// <summary>Gets or sets the longest video a non-admin may add, in minutes (0 = no limit).</summary>
     public int MaxDurationMinutes { get; set; }
 
+    /// <summary>Gets or sets the caller's download format: default, compatible or best.</summary>
+    public string DownloadFormat { get; set; } = "default";
+
     /// <summary>
     /// Gets or sets the item id of the YouTube library, so the client script can give that
     /// library's menu links the YouTube icon. Null while no library is configured.
@@ -191,6 +194,13 @@ public sealed class DismissResponseDto
 {
     /// <summary>Gets or sets how many entries were removed from the list.</summary>
     public int Count { get; set; }
+}
+
+/// <summary>Body of a request to change the caller's preferences.</summary>
+public sealed class PreferencesRequestDto
+{
+    /// <summary>Gets or sets the download format: default, compatible or best.</summary>
+    public string? DownloadFormat { get; set; }
 }
 
 /// <summary>Body of a Delete request.</summary>

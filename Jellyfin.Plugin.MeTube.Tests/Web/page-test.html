@@ -48,7 +48,7 @@ window.addEventListener('hashchange', renderRoute);
 window.Emby = { Page: { show: function (p) { location.hash = '#' + p; }, back: function () { history.back(); } } };
 window.Dashboard = { confirm: function (opts, title, cb) { window.lastConfirm = opts; setTimeout(function () { cb(window.confirmAnswer !== false); }, 10); } };
 window.mock = {
-  me: { Allowed: true, IsAdmin: true, CanPlay: true, Configured: true, InjectionEnabled: true, LibraryId: 'f00df00d-f00d-f00d-f00d-f00df00df00d' },
+  me: { Allowed: true, IsAdmin: true, CanPlay: true, Configured: true, InjectionEnabled: true, LibraryId: 'f00df00d-f00d-f00d-f00d-f00df00df00d', DownloadFormat: 'compatible' },
   jobs: [
     { Id: 'j1', VideoId: 'vvvvvvvvvv1', Title: 'Everybody (Backstreets Back) (Official HD Video)', Channel: 'BackstreetBoysVEVO', State: 'Failed', Error: 'Download error', CanDismiss: true, ThumbnailUrl: 'x', UserName: 'Hans', CreatedUtc: '2026-10-11T21:00:44Z' },
     { Id: 'j2', VideoId: 'vvvvvvvvvv2', Title: 'I Want It That Way', Channel: 'BackstreetBoysVEVO', State: 'Missing', CanDismiss: true, ThumbnailUrl: 'x', UserName: 'Hans', CreatedUtc: '2026-10-11T21:00:43Z' },
@@ -90,6 +90,7 @@ window.fetch = function (url, opts) {
   else if (url.indexOf('/api/MeTube/Delete') === 0) res = { status: mock.deleteStatus, body: mock.deleteStatus === 204 ? null : { Error: 'Jellyfin is not allowed to delete files' } };
   else if (url.indexOf('/api/MeTube/Status?videoIds=') === 0) res.body = mock.other;
   else if (url.indexOf('/api/MeTube/Status') === 0) res.body = mock.jobs;
+  else if (url.indexOf('/api/MeTube/Preferences') === 0) { res.status = 204; }
   else if (url.indexOf('/api/MeTube/Jobs/Dismiss') === 0) {
     var before = mock.jobs.length;
     mock.jobs = mock.jobs.filter(function (j) { return !(j.CanDismiss && (body.All || (body.JobIds || []).indexOf(j.Id) >= 0)); });
@@ -185,6 +186,12 @@ function count(part) { return calls.filter(function (c) { return c.url.indexOf(p
   location.hash = '#/youtube?q=cats&order=none';
   await wait(1500);
   r.defaultOrderNone = [].map.call(document.querySelectorAll('#mtjPage .mtj-card .mtj-name'), function (n) { return n.textContent; }).join(' | ');
+  // The download format: shows the stored choice, and a change is saved.
+  var fmt = q('#mtjPage select[data-filter="download"]');
+  r.format_initial = fmt ? fmt.value : 'missing';
+  if (fmt) { fmt.value = 'best'; fmt.dispatchEvent(new Event('change')); }
+  await wait(300);
+  r.format_posts = calls.filter(function (c) { return c.url.indexOf('/MeTube/Preferences') >= 0; }).map(function (c) { return c.body && c.body.DownloadFormat; });
   // 1. Add
   q('#mtjPage .mtj-card[data-video-id="aaaaaaaaaaa"] .mtj-actions button').click();
   r.add_busy = actionsOf('aaaaaaaaaaa');
