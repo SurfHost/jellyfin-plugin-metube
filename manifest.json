@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/SurfHost/jellyfin-plugin-metube/main/logo.png",
     "versions": [
       {
+        "version": "0.5.0",
+        "changelog": "Each user picks their download format on the YouTube page: Chromecast compatible (up to 1080p) or best quality (4K), or the server default. The choice is remembered per user.",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/SurfHost/jellyfin-plugin-metube/releases/download/v0.5.0/metube_0.5.0.zip",
+        "checksum": "a5af8a886bde23c0785928fd1e25e627",
+        "timestamp": "2026-10-15T09:09:44Z"
+      },
+      {
         "version": "0.4.0",
         "changelog": "New installs download in the iOS compatible format by default (H.264 + AAC in MP4), which plays on Chromecast without transcoding. Existing installs keep their setting.",
         "targetAbi": "12.2.0.0",
