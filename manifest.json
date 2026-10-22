@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/SurfHost/jellyfin-plugin-metube/main/logo.png",
     "versions": [
       {
+        "version": "0.5.1",
+        "changelog": "A video added right after switching the download format gets the new format. It could still get the previous one when the switch had not been saved yet. When saving the download format fails, the list only rolls back if no newer choice was made since (and the same user is still signed in).",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/SurfHost/jellyfin-plugin-metube/releases/download/v0.5.1/metube_0.5.1.zip",
+        "checksum": "ea4fcfaa189014010be62d794249decf",
+        "timestamp": "2026-10-22T06:54:33Z"
+      },
+      {
         "version": "0.5.0",
         "changelog": "Each user picks their download format on the YouTube page: Chromecast compatible (up to 1080p) or best quality (4K), or the server default. The choice is remembered per user.",
         "targetAbi": "12.2.0.0",
