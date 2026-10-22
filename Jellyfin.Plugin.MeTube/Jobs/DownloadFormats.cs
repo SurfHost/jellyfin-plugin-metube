@@ -34,6 +34,13 @@ public static class DownloadFormats
     public static bool IsKnown(string? choice) =>
         choice?.Trim().ToLowerInvariant() is Default or Compatible or Best;
 
+    /// <summary>
+    /// Returns the format for one Add: the one the page sent with it, or the user's
+    /// stored choice when it sent none (a page still running an older script).
+    /// </summary>
+    public static string Resolve(string? requested, string? stored) =>
+        Normalize(string.IsNullOrWhiteSpace(requested) ? stored : requested);
+
     /// <summary>Applies a user's choice to the MeTube options from the plugin settings.</summary>
     public static MeTubeAddOptions Apply(MeTubeAddOptions options, string? choice) =>
         Normalize(choice) switch

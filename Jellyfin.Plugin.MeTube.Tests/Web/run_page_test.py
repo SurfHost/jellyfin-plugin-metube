@@ -70,6 +70,7 @@ def main():
         ("Add shows Adding... at once", r.get("add_busy") == "Adding…", r.get("add_busy")),
         ("Add sends one request", r.get("add_calls") == 1, r.get("add_calls")),
         ("Add ends as Queued", r.get("add_after") == "Queued", r.get("add_after")),
+        ("Add sends a format change that is still being saved, and only then", r.get("add_formats") == ["best", "none"], r.get("add_formats")),
         ("a refused Add shows the reason", "MeTube refused it" in (r.get("addFail_after") or ""), r.get("addFail_after")),
         ("Delete asks and then deletes", r.get("delete_calls") == 1, r.get("delete_calls")),
         ("Try again adds again", r.get("retry_found") and r.get("retry_add_calls") == 1, (r.get("retry_found"), r.get("retry_add_calls"))),

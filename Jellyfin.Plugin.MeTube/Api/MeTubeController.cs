@@ -243,7 +243,13 @@ public sealed class MeTubeController : ControllerBase
             return BadRequest(new ErrorDto { Error = "That is not a YouTube video link." });
         }
 
-        var outcome = await _jobs.AddAsync(userId, _access.GetUserName(userId), isAdmin, videoId, cancellationToken).ConfigureAwait(false);
+        var format = request?.DownloadFormat;
+        if (!string.IsNullOrWhiteSpace(format) && !DownloadFormats.IsKnown(format))
+        {
+            return BadRequest(new ErrorDto { Error = "Unknown download format." });
+        }
+
+        var outcome = await _jobs.AddAsync(userId, _access.GetUserName(userId), isAdmin, videoId, format, cancellationToken).ConfigureAwait(false);
         if (outcome.Error is not null)
         {
             return StatusCode(outcome.StatusCode, new ErrorDto { Error = outcome.Error });

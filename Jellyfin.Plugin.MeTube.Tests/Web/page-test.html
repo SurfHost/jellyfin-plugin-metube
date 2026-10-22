@@ -90,7 +90,11 @@ window.fetch = function (url, opts) {
   else if (url.indexOf('/api/MeTube/Delete') === 0) res = { status: mock.deleteStatus, body: mock.deleteStatus === 204 ? null : { Error: 'Jellyfin is not allowed to delete files' } };
   else if (url.indexOf('/api/MeTube/Status?videoIds=') === 0) res.body = mock.other;
   else if (url.indexOf('/api/MeTube/Status') === 0) res.body = mock.jobs;
-  else if (url.indexOf('/api/MeTube/Preferences') === 0) { res.status = 204; }
+  else if (url.indexOf('/api/MeTube/Preferences') === 0) {
+    // With holdPrefs the save stays on its way until the test calls releasePrefs().
+    if (mock.holdPrefs) return new Promise(function (resolve) { window.releasePrefs = function () { resolve(new Response(null, { status: 204 })); }; });
+    res.status = 204;
+  }
   else if (url.indexOf('/api/MeTube/Jobs/Dismiss') === 0) {
     var before = mock.jobs.length;
     mock.jobs = mock.jobs.filter(function (j) { return !(j.CanDismiss && (body.All || (body.JobIds || []).indexOf(j.Id) >= 0)); });
@@ -189,6 +193,8 @@ function count(part) { return calls.filter(function (c) { return c.url.indexOf(p
   // The download format: shows the stored choice, and a change is saved.
   var fmt = q('#mtjPage select[data-filter="download"]');
   r.format_initial = fmt ? fmt.value : 'missing';
+  // The save is held back, so the first Add below happens while it is on its way.
+  mock.holdPrefs = true;
   if (fmt) { fmt.value = 'best'; fmt.dispatchEvent(new Event('change')); }
   await wait(300);
   r.format_posts = calls.filter(function (c) { return c.url.indexOf('/MeTube/Preferences') >= 0; }).map(function (c) { return c.body && c.body.DownloadFormat; });
@@ -197,12 +203,17 @@ function count(part) { return calls.filter(function (c) { return c.url.indexOf(p
   r.add_busy = actionsOf('aaaaaaaaaaa');
   await wait(800);
   r.add_after = actionsOf('aaaaaaaaaaa'); r.add_calls = count('/MeTube/Add');
+  mock.holdPrefs = false;
+  if (window.releasePrefs) window.releasePrefs();
+  await wait(100);
   // 2. Add that fails
   mock.addFails = true;
   q('#mtjPage .mtj-card[data-video-id="bbbbbbbbbbb"] .mtj-actions button').click();
   await wait(800);
   r.addFail_after = actionsOf('bbbbbbbbbbb');
   mock.addFails = false;
+  // The first Add carried the unsaved choice; the second, after the save, leaves it to the server.
+  r.add_formats = calls.filter(function (c) { return c.url.indexOf('/MeTube/Add') >= 0; }).map(function (c) { return c.body && 'DownloadFormat' in c.body ? c.body.DownloadFormat : 'none'; });
   // 3. Delete with confirmation
   window.confirmAnswer = true;
   q('#mtjPage .mtj-card[data-video-id="ccccccccccc"] .mtj-danger').click();

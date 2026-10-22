@@ -177,6 +177,12 @@ public sealed class AddRequestDto
 
     /// <summary>Gets or sets a pasted YouTube link.</summary>
     public string? Url { get; set; }
+
+    /// <summary>
+    /// Gets or sets the download format for this video: default, compatible or best.
+    /// Empty uses the caller's stored choice.
+    /// </summary>
+    public string? DownloadFormat { get; set; }
 }
 
 /// <summary>Body of a request to remove entries from the "Added videos" list.</summary>

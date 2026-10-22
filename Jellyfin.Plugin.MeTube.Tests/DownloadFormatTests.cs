@@ -36,6 +36,18 @@ public class DownloadFormatTests
     }
 
     [Theory]
+    [InlineData("best", "compatible", "best")]
+    [InlineData("Compatible", "best", "compatible")]
+    [InlineData("default", "best", "default")]
+    [InlineData(null, "best", "best")]
+    [InlineData("", "compatible", "compatible")]
+    [InlineData(" ", null, "default")]
+    public void TheFormatSentWithAnAddWinsOverTheStoredOne(string? requested, string? stored, string expected)
+    {
+        Assert.Equal(expected, DownloadFormats.Resolve(requested, stored));
+    }
+
+    [Theory]
     [InlineData("default", true)]
     [InlineData("Compatible", true)]
     [InlineData(" best ", true)]

@@ -23,7 +23,7 @@
         return;
     }
 
-    var VERSION = '0.5.0';
+    var VERSION = '0.5.1';
     var ROUTE_RE = /^#!?\/youtube(?:[\/?]|$)/i;
     var ENTRY_ATTR = 'data-metube-entry';
     // Material "smart_display": Jellyfin itself uses ondemand_video for mixed-content
@@ -58,6 +58,7 @@
         jobsByVideo: {},
         otherJobs: {},
         addState: {},
+        formatSaving: null,
         tab: 'search',
         source: null,
         pollTimer: null,
@@ -518,6 +519,7 @@
         state.jobsByVideo = {};
         state.otherJobs = {};
         state.addState = {};
+        state.formatSaving = null;
         state.tab = 'search';
         state.folders = null;
         state.aliases = [];
@@ -1039,11 +1041,28 @@
     }
 
     // The format the next Add downloads in. Stored on the server per user, so it
-    // follows them to every device; the Add request itself stays the same.
+    // follows them to every device. While a change is still on its way to the
+    // server, an Add sends it along so it can't get the previous format; otherwise
+    // the Add leaves it out, because the stored choice may be newer (set elsewhere).
     function setDownloadFormat(value) {
         var previous = pick(state.me, 'DownloadFormat') || 'default';
+        var saving = { value: value };
         state.me.DownloadFormat = value;
-        request('POST', 'MeTube/Preferences', { DownloadFormat: value }).catch(function (error) {
+        state.formatSaving = saving;
+        request('POST', 'MeTube/Preferences', { DownloadFormat: value }).then(function () {
+            if (state.formatSaving === saving) {
+                state.formatSaving = null;
+            }
+        }, function (error) {
+            // Only the latest change rolls back: a newer one, or another user signing
+            // in (which clears formatSaving), has replaced this one.
+            if (state.formatSaving !== saving) {
+                return;
+            }
+            state.formatSaving = null;
+            if (!state.me) {
+                return; // Signed out meanwhile.
+            }
             state.me.DownloadFormat = previous;
             var node = state.page && state.page.querySelector('select[data-filter="download"]');
             if (node) {
@@ -1479,8 +1498,13 @@
         }
         state.addState[videoId] = { busy: 'add' };
         rerender();
-        // Always the id: the server rebuilds the URL itself.
-        request('POST', 'MeTube/Add', { VideoId: videoId }).then(function (result) {
+        // Always the id: the server rebuilds the URL itself. The format only while a
+        // change is still being saved (see setDownloadFormat).
+        var body = { VideoId: videoId };
+        if (state.formatSaving) {
+            body.DownloadFormat = state.formatSaving.value;
+        }
+        request('POST', 'MeTube/Add', body).then(function (result) {
             delete state.addState[videoId];
             if (pick(result, 'AlreadyInLibrary')) {
                 setAvailability(videoId, 'InLibrary', pick(result, 'ItemId'));

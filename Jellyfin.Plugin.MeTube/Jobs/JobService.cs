@@ -79,8 +79,11 @@ public sealed class JobService
         }
     }
 
-    /// <summary>Adds a video for a user.</summary>
-    public async Task<AddOutcome> AddAsync(Guid userId, string? userName, bool isAdmin, string videoId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Adds a video for a user, in <paramref name="downloadFormat"/> when given and
+    /// otherwise in the user's stored choice.
+    /// </summary>
+    public async Task<AddOutcome> AddAsync(Guid userId, string? userName, bool isAdmin, string videoId, string? downloadFormat, CancellationToken cancellationToken)
     {
         var config = Plugin.Config;
         if (string.IsNullOrWhiteSpace(config.MeTubeUrl))
@@ -157,7 +160,7 @@ public sealed class JobService
             }
         }
 
-        var options = DownloadFormats.Apply(CurrentOptions(), _preferences.GetFormat(userId));
+        var options = DownloadFormats.Apply(CurrentOptions(), DownloadFormats.Resolve(downloadFormat, _preferences.GetFormat(userId)));
         now = DateTimeOffset.UtcNow;
         var candidate = new JobRecord
         {

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.1] - 2026-10-22
+
+- A video added right after switching the download format gets the new format. It could still get the previous one when the switch had not been saved yet.
+- When saving the download format fails, the list only rolls back if no newer choice was made since (and the same user is still signed in).
+
 ## [0.5.0] - 2026-10-15
 
 - Each user picks their download format on the YouTube page: Chromecast compatible (up to 1080p) or best quality (4K), or the server default. The choice is remembered per user.
