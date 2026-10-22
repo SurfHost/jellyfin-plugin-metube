@@ -23,7 +23,7 @@
         return;
     }
 
-    var VERSION = '0.5.1';
+    var VERSION = '0.5.2';
     var ROUTE_RE = /^#!?\/youtube(?:[\/?]|$)/i;
     var ENTRY_ATTR = 'data-metube-entry';
     // Material "smart_display": Jellyfin itself uses ondemand_video for mixed-content

@@ -11,12 +11,18 @@ It shows up there with its title, thumbnail, description and date.
 ## How it works
 
 ```mermaid
-flowchart LR
-    A["Jellyfin app or browser<br/>YouTube page"] -- "1 · search, Add" --> B["Jellyfin server<br/>with this plugin"]
-    B -- "2 · download this video<br/>(local network only)" --> C["MeTube"]
-    C -- "3 · saves video<br/>and thumbnail" --> D[("YouTube library<br/>folder")]
-    B -- "4 · scans the library" --> D
-    B -. "5 · Play" .-> A
+%%{init: {"sequence": {"mirrorActors": false}}}%%
+sequenceDiagram
+    autonumber
+    actor U as You, on the YouTube page
+    participant J as Jellyfin server<br/>with this plugin
+    participant M as MeTube
+    participant L as YouTube library<br/>folder
+    U->>J: Search and press Add
+    J->>M: Download this video
+    M->>L: Save the video and thumbnail, in a folder per channel
+    J->>L: Scan the library
+    J-->>U: The card turns into Play
 ```
 
 1. On the **YouTube** page in Jellyfin you search and press **Add**. That goes to your own Jellyfin server, under your own Jellyfin login.

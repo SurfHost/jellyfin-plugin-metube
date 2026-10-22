@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.5.2] - 2026-10-22
+
+- README: the "How it works" diagram is redrawn as numbered steps between you, Jellyfin, MeTube and the library folder. The labels no longer sit on top of the lines.
+
 ## [0.5.1] - 2026-10-22
 
 - A video added right after switching the download format gets the new format. It could still get the previous one when the switch had not been saved yet.
